@@ -1,0 +1,47 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    @apply text-slate-900 bg-slate-50 antialiased;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', 'Sarabun', sans-serif;
+  }
+}
+
+@media print {
+  @page {
+    margin: 8mm;
+    size: auto;
+  }
+
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-size: 11pt;
+  }
+
+  /* Hide app chrome during printing */
+  header,
+  footer,
+  nav,
+  button,
+  .print\:hidden {
+    display: none !important;
+  }
+
+  /* Make modal print full screen */
+  .fixed {
+    position: static !important;
+    background: none !important;
+    padding: 0 !important;
+  }
+
+  #printable-receipt-a4,
+  #printable-receipt-slip {
+    box-shadow: none !important;
+    border: none !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+}

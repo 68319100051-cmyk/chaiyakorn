@@ -1,0 +1,108 @@
+{
+  "entities": {
+    "RepairTicket": {
+      "title": "RepairTicket",
+      "description": "A computer or printer repair job order ticket.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "ticketNumber": { "type": "string" },
+        "customerName": { "type": "string" },
+        "customerPhone": { "type": "string" },
+        "customerLineId": { "type": "string" },
+        "customerAddress": { "type": "string" },
+        "deviceType": { "type": "string", "enum": ["computer", "laptop", "printer", "other"] },
+        "brand": { "type": "string" },
+        "model": { "type": "string" },
+        "serialNumber": { "type": "string" },
+        "color": { "type": "string" },
+        "accessories": { "type": "array" },
+        "problemDescription": { "type": "string" },
+        "initialConditionNotes": { "type": "string" },
+        "technicianNotes": { "type": "string" },
+        "technicianName": { "type": "string" },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "diagnosing", "waiting_parts", "repaired", "ready_pickup", "completed", "cancelled"]
+        },
+        "estimatedCost": { "type": "number" },
+        "laborCost": { "type": "number" },
+        "partsCost": { "type": "number" },
+        "discount": { "type": "number" },
+        "totalAmount": { "type": "number" },
+        "isPaid": { "type": "boolean" },
+        "paymentMethod": { "type": "string" },
+        "partsUsed": { "type": "array" },
+        "trackingToken": { "type": "string" },
+        "lineNotified": { "type": "boolean" },
+        "lastLineNotifiedAt": { "type": "string" },
+        "receivedDate": { "type": "string" },
+        "estimatedCompletionDate": { "type": "string" },
+        "completedDate": { "type": "string" },
+        "deliveredDate": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["ticketNumber", "customerName", "customerPhone", "deviceType", "status"]
+    },
+    "InventoryItem": {
+      "title": "InventoryItem",
+      "description": "Stock inventory item for spare parts and shop retail items.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "itemCode": { "type": "string" },
+        "name": { "type": "string" },
+        "category": {
+          "type": "string",
+          "enum": ["computer_parts", "printer_parts", "printer_ink", "consumables", "accessories", "tools"]
+        },
+        "brand": { "type": "string" },
+        "modelCompatibility": { "type": "string" },
+        "costPrice": { "type": "number" },
+        "sellingPrice": { "type": "number" },
+        "stockQuantity": { "type": "number" },
+        "minStockAlert": { "type": "number" },
+        "unit": { "type": "string" },
+        "locationShelf": { "type": "string" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["itemCode", "name", "category", "sellingPrice", "stockQuantity"]
+    },
+    "ShopSettings": {
+      "title": "ShopSettings",
+      "description": "Configuration and details for the repair shop.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "shopName": { "type": "string" },
+        "shopPhone": { "type": "string" },
+        "shopLineId": { "type": "string" },
+        "shopAddress": { "type": "string" },
+        "taxId": { "type": "string" },
+        "receiptFooterMessage": { "type": "string" },
+        "lineNotifyToken": { "type": "string" },
+        "lineNotifyEnabled": { "type": "boolean" },
+        "warrantyTerms": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["shopName", "shopPhone"]
+    }
+  },
+  "firestore": {
+    "/repair_tickets/{ticketId}": {
+      "schema": { "$ref": "#/entities/RepairTicket" },
+      "description": "Repair tickets for computers, printers, and devices."
+    },
+    "/inventory/{itemId}": {
+      "schema": { "$ref": "#/entities/InventoryItem" },
+      "description": "Inventory stock items for replacement parts, printer ink, and retail products."
+    },
+    "/shop_settings/{settingId}": {
+      "schema": { "$ref": "#/entities/ShopSettings" },
+      "description": "Store configuration, contact information, and warranty policies."
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "FixPro - ระบบจัดการร้านซ่อมคอมพิวเตอร์และปริ้นเตอร์",
+  "description": "ระบบจัดการร้านซ่อมคอมพิวเตอร์และปริ้นเตอร์ จัดการสต็อกอะไหล่ พิมพ์ใบรับซ่อม แจ้งเตือน LINE และเช็คสถานะผ่าน QR Code เรียลไทม์",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
