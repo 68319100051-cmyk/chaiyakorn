@@ -90,7 +90,22 @@ export default function App() {
   };
 
   const handleSaveTicket = async (ticket: RepairTicket, previousParts: UsedPart[]) => {
-    await dbService.saveTicket(ticket, previousParts);
+    // Optimistic update immediately so the new or updated ticket shows right away
+    setTickets(prev => {
+      const idx = prev.findIndex(t => t.id === ticket.id);
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = ticket;
+        return copy;
+      }
+      return [ticket, ...prev];
+    });
+
+    try {
+      await dbService.saveTicket(ticket, previousParts);
+    } catch (err) {
+      console.error('Failed to save ticket in dbService:', err);
+    }
     setIsTicketFormOpen(false);
   };
 

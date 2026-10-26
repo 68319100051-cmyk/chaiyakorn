@@ -37,8 +37,52 @@ function setLocal<T>(key: string, data: T): void {
   }
 }
 
+/**
+ * Recursively strips undefined values so Firestore setDoc / updateDoc will not crash.
+ * Firestore strictly forbids 'undefined' field values.
+ */
+export function cleanFirestoreData<T>(obj: T): T {
+  if (obj === null || obj === undefined) {
+    return null as unknown as T;
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(item => cleanFirestoreData(item)) as unknown as T;
+  }
+  if (typeof obj === 'object' && !(obj instanceof Date)) {
+    const cleaned: Record<string, any> = {};
+    for (const [key, value] of Object.entries(obj)) {
+      if (value !== undefined) {
+        cleaned[key] = cleanFirestoreData(value);
+      }
+    }
+    return cleaned as T;
+  }
+  return obj;
+}
+
 class DatabaseService {
   private isOnlineFirestore: boolean = true;
+  private ticketSubscribers: Set<(tickets: RepairTicket[]) => void> = new Set();
+  private inventorySubscribers: Set<(items: InventoryItem[]) => void> = new Set();
+  private settingsSubscribers: Set<(settings: ShopSettings) => void> = new Set();
+
+  private notifyTickets(list: RepairTicket[]) {
+    this.ticketSubscribers.forEach(cb => {
+      try { cb(list); } catch (e) { console.warn('Ticket subscriber error:', e); }
+    });
+  }
+
+  private notifyInventory(list: InventoryItem[]) {
+    this.inventorySubscribers.forEach(cb => {
+      try { cb(list); } catch (e) { console.warn('Inventory subscriber error:', e); }
+    });
+  }
+
+  private notifySettings(data: ShopSettings) {
+    this.settingsSubscribers.forEach(cb => {
+      try { cb(data); } catch (e) { console.warn('Settings subscriber error:', e); }
+    });
+  }
 
   // Initialize and Seed Default Data if empty
   async initializeAndSeed(): Promise<void> {
@@ -50,7 +94,7 @@ class DatabaseService {
       });
 
       if (!settingsSnap || !settingsSnap.exists() || (settingsSnap.data() as any)?.shopName?.includes('FixPro')) {
-        await setDoc(settingsRef, INITIAL_SHOP_SETTINGS).catch(err => {
+        await setDoc(settingsRef, cleanFirestoreData(INITIAL_SHOP_SETTINGS)).catch(err => {
           handleFirestoreError(err, OperationType.WRITE, 'shop_settings/default');
         });
       }
@@ -58,6 +102,7 @@ class DatabaseService {
       const localSett = getLocal<ShopSettings | null>(LOCAL_STORAGE_KEYS.SETTINGS, null);
       if (!localSett || localSett.shopName?.includes('FixPro')) {
         setLocal(LOCAL_STORAGE_KEYS.SETTINGS, INITIAL_SHOP_SETTINGS);
+        this.notifySettings(INITIAL_SHOP_SETTINGS);
       }
 
       // Check inventory
@@ -67,7 +112,7 @@ class DatabaseService {
 
       if (invSnap && invSnap.empty) {
         for (const item of INITIAL_INVENTORY) {
-          await setDoc(doc(db, 'inventory', item.id), item).catch(err => {
+          await setDoc(doc(db, 'inventory', item.id), cleanFirestoreData(item)).catch(err => {
             handleFirestoreError(err, OperationType.WRITE, `inventory/${item.id}`);
           });
         }
@@ -80,7 +125,7 @@ class DatabaseService {
 
       if (ticketsSnap && ticketsSnap.empty) {
         for (const ticket of INITIAL_TICKETS) {
-          await setDoc(doc(db, 'repair_tickets', ticket.id), ticket).catch(err => {
+          await setDoc(doc(db, 'repair_tickets', ticket.id), cleanFirestoreData(ticket)).catch(err => {
             handleFirestoreError(err, OperationType.WRITE, `repair_tickets/${ticket.id}`);
           });
         }
@@ -94,14 +139,24 @@ class DatabaseService {
         setLocal(LOCAL_STORAGE_KEYS.INVENTORY, INITIAL_INVENTORY);
         setLocal(LOCAL_STORAGE_KEYS.SETTINGS, INITIAL_SHOP_SETTINGS);
         localStorage.setItem(LOCAL_STORAGE_KEYS.SEEDED, 'true');
+        this.notifyTickets(INITIAL_TICKETS);
+        this.notifyInventory(INITIAL_INVENTORY);
+        this.notifySettings(INITIAL_SHOP_SETTINGS);
       }
     }
   }
 
   // --- Real-time Subscriptions ---
   subscribeTickets(callback: (tickets: RepairTicket[]) => void): () => void {
+    this.ticketSubscribers.add(callback);
+
+    // Provide immediate initial data from local storage
+    const initialLocal = getLocal<RepairTicket[]>(LOCAL_STORAGE_KEYS.TICKETS, INITIAL_TICKETS);
+    callback(initialLocal);
+
+    let unsubFirestore = () => {};
     try {
-      return onSnapshot(
+      unsubFirestore = onSnapshot(
         collection(db, 'repair_tickets'),
         (snapshot) => {
           if (!snapshot.empty) {
@@ -110,31 +165,39 @@ class DatabaseService {
               list.push(docSnap.data() as RepairTicket);
             });
             // Sort by createdAt descending
-            list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+            list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
             setLocal(LOCAL_STORAGE_KEYS.TICKETS, list);
-            callback(list);
+            this.notifyTickets(list);
           } else {
-            // Check local fallback
             const local = getLocal<RepairTicket[]>(LOCAL_STORAGE_KEYS.TICKETS, INITIAL_TICKETS);
-            callback(local);
+            this.notifyTickets(local);
           }
         },
         (error) => {
           console.warn('Snapshot error on repair_tickets:', error);
           const local = getLocal<RepairTicket[]>(LOCAL_STORAGE_KEYS.TICKETS, INITIAL_TICKETS);
-          callback(local);
+          this.notifyTickets(local);
         }
       );
-    } catch {
-      const local = getLocal<RepairTicket[]>(LOCAL_STORAGE_KEYS.TICKETS, INITIAL_TICKETS);
-      callback(local);
-      return () => {};
+    } catch (err) {
+      console.warn('Error setting up onSnapshot for tickets:', err);
     }
+
+    return () => {
+      this.ticketSubscribers.delete(callback);
+      unsubFirestore();
+    };
   }
 
   subscribeInventory(callback: (items: InventoryItem[]) => void): () => void {
+    this.inventorySubscribers.add(callback);
+
+    const initialLocal = getLocal<InventoryItem[]>(LOCAL_STORAGE_KEYS.INVENTORY, INITIAL_INVENTORY);
+    callback(initialLocal);
+
+    let unsubFirestore = () => {};
     try {
-      return onSnapshot(
+      unsubFirestore = onSnapshot(
         collection(db, 'inventory'),
         (snapshot) => {
           if (!snapshot.empty) {
@@ -144,81 +207,100 @@ class DatabaseService {
             });
             list.sort((a, b) => a.name.localeCompare(b.name, 'th'));
             setLocal(LOCAL_STORAGE_KEYS.INVENTORY, list);
-            callback(list);
+            this.notifyInventory(list);
           } else {
             const local = getLocal<InventoryItem[]>(LOCAL_STORAGE_KEYS.INVENTORY, INITIAL_INVENTORY);
-            callback(local);
+            this.notifyInventory(local);
           }
         },
         (error) => {
           console.warn('Snapshot error on inventory:', error);
           const local = getLocal<InventoryItem[]>(LOCAL_STORAGE_KEYS.INVENTORY, INITIAL_INVENTORY);
-          callback(local);
+          this.notifyInventory(local);
         }
       );
-    } catch {
-      const local = getLocal<InventoryItem[]>(LOCAL_STORAGE_KEYS.INVENTORY, INITIAL_INVENTORY);
-      callback(local);
-      return () => {};
+    } catch (err) {
+      console.warn('Error setting up onSnapshot for inventory:', err);
     }
+
+    return () => {
+      this.inventorySubscribers.delete(callback);
+      unsubFirestore();
+    };
   }
 
   subscribeSettings(callback: (settings: ShopSettings) => void): () => void {
+    this.settingsSubscribers.add(callback);
+
+    const initialLocal = getLocal<ShopSettings>(LOCAL_STORAGE_KEYS.SETTINGS, INITIAL_SHOP_SETTINGS);
+    callback(initialLocal);
+
+    let unsubFirestore = () => {};
     try {
-      return onSnapshot(
+      unsubFirestore = onSnapshot(
         doc(db, 'shop_settings', 'default'),
         (docSnap) => {
           if (docSnap.exists()) {
             const data = docSnap.data() as ShopSettings;
             setLocal(LOCAL_STORAGE_KEYS.SETTINGS, data);
-            callback(data);
+            this.notifySettings(data);
           } else {
             const local = getLocal<ShopSettings>(LOCAL_STORAGE_KEYS.SETTINGS, INITIAL_SHOP_SETTINGS);
-            callback(local);
+            this.notifySettings(local);
           }
         },
         (error) => {
           console.warn('Snapshot error on shop_settings:', error);
           const local = getLocal<ShopSettings>(LOCAL_STORAGE_KEYS.SETTINGS, INITIAL_SHOP_SETTINGS);
-          callback(local);
+          this.notifySettings(local);
         }
       );
-    } catch {
-      const local = getLocal<ShopSettings>(LOCAL_STORAGE_KEYS.SETTINGS, INITIAL_SHOP_SETTINGS);
-      callback(local);
-      return () => {};
+    } catch (err) {
+      console.warn('Error setting up onSnapshot for shop_settings:', err);
     }
+
+    return () => {
+      this.settingsSubscribers.delete(callback);
+      unsubFirestore();
+    };
   }
 
   // --- Repair Tickets Operations ---
   async saveTicket(ticket: RepairTicket, previousParts: typeof ticket.partsUsed = []): Promise<void> {
-    try {
-      await setDoc(doc(db, 'repair_tickets', ticket.id), ticket);
-    } catch (e) {
-      console.warn('Firestore write failed, saving to local:', e);
-    }
+    // 1. Sanitize ticket to ensure no undefined values are sent to Firestore
+    const cleanedTicket = cleanFirestoreData(ticket);
 
-    // Always sync local
+    // 2. Always sync and notify local immediately so UI updates instantly
     const local = getLocal<RepairTicket[]>(LOCAL_STORAGE_KEYS.TICKETS, INITIAL_TICKETS);
     const idx = local.findIndex(t => t.id === ticket.id);
     if (idx >= 0) {
-      local[idx] = ticket;
+      local[idx] = cleanedTicket;
     } else {
-      local.unshift(ticket);
+      local.unshift(cleanedTicket);
     }
     setLocal(LOCAL_STORAGE_KEYS.TICKETS, local);
+    this.notifyTickets(local);
 
-    // Auto-deduct inventory if parts were added or changed
-    this.reconcilePartsStock(ticket.partsUsed, previousParts);
+    // 3. Persist to Firestore
+    try {
+      await setDoc(doc(db, 'repair_tickets', ticket.id), cleanedTicket);
+    } catch (e) {
+      console.warn('Firestore write failed, using local storage state:', e);
+    }
+
+    // 4. Auto-deduct inventory if parts were added or changed
+    this.reconcilePartsStock(ticket.partsUsed || [], previousParts || []);
   }
 
-  async updateTicketStatus(ticketId: string, status: RepairTicket['status'], extraData: Partial<RepairTicket> = {}): Promise<void> {
+  async updateTicketStatus(ticketId: string, status?: RepairTicket['status'], extraData: Partial<RepairTicket> = {}): Promise<void> {
     const now = new Date().toISOString();
     const updatePayload: Record<string, any> = {
-      status,
       updatedAt: now,
       ...extraData
     };
+    if (status) {
+      updatePayload.status = status;
+    }
     if (status === 'repaired' || status === 'ready_pickup') {
       updatePayload.completedDate = extraData.completedDate || new Date().toISOString().split('T')[0];
     } else if (status === 'completed') {
@@ -228,29 +310,34 @@ class DatabaseService {
       }
     }
 
-    try {
-      await updateDoc(doc(db, 'repair_tickets', ticketId), updatePayload);
-    } catch (e) {
-      console.warn('Firestore update failed, fallback to local:', e);
-    }
+    const cleanedPayload = cleanFirestoreData(updatePayload);
 
-    // Update local
+    // Update local immediately
     const local = getLocal<RepairTicket[]>(LOCAL_STORAGE_KEYS.TICKETS, INITIAL_TICKETS);
     const idx = local.findIndex(t => t.id === ticketId);
     if (idx >= 0) {
-      local[idx] = { ...local[idx], ...updatePayload };
+      local[idx] = { ...local[idx], ...cleanedPayload };
       setLocal(LOCAL_STORAGE_KEYS.TICKETS, local);
+      this.notifyTickets(local);
+    }
+
+    try {
+      await updateDoc(doc(db, 'repair_tickets', ticketId), cleanedPayload);
+    } catch (e) {
+      console.warn('Firestore update failed, fallback to local:', e);
     }
   }
 
   async deleteTicket(ticketId: string): Promise<void> {
+    const local = getLocal<RepairTicket[]>(LOCAL_STORAGE_KEYS.TICKETS, INITIAL_TICKETS).filter(t => t.id !== ticketId);
+    setLocal(LOCAL_STORAGE_KEYS.TICKETS, local);
+    this.notifyTickets(local);
+
     try {
       await deleteDoc(doc(db, 'repair_tickets', ticketId));
     } catch (e) {
       console.warn('Firestore delete failed:', e);
     }
-    const local = getLocal<RepairTicket[]>(LOCAL_STORAGE_KEYS.TICKETS, INITIAL_TICKETS).filter(t => t.id !== ticketId);
-    setLocal(LOCAL_STORAGE_KEYS.TICKETS, local);
   }
 
   // Look up ticket by Ticket Number or ID (for public QR code tracking)
@@ -280,9 +367,9 @@ class DatabaseService {
     // Fallback local search
     const local = getLocal<RepairTicket[]>(LOCAL_STORAGE_KEYS.TICKETS, INITIAL_TICKETS);
     return local.find(
-      t => t.ticketNumber.toUpperCase() === clean ||
-           t.id.toUpperCase() === clean ||
-           t.customerPhone.replace(/[^0-9]/g, '') === clean.replace(/[^0-9]/g, '')
+      t => t.ticketNumber?.toUpperCase() === clean ||
+           t.id?.toUpperCase() === clean ||
+           t.customerPhone?.replace(/[^0-9]/g, '') === clean.replace(/[^0-9]/g, '')
     ) || null;
   }
 
@@ -304,7 +391,7 @@ class DatabaseService {
             const data = docSnap.data() as RepairTicket;
             if (
               data.ticketNumber?.toUpperCase() === clean ||
-              data.id === clean ||
+              data.id?.toUpperCase() === clean ||
               data.trackingToken?.toUpperCase() === clean
             ) {
               found = data;
@@ -317,8 +404,8 @@ class DatabaseService {
             // Check fallback local
             const local = getLocal<RepairTicket[]>(LOCAL_STORAGE_KEYS.TICKETS, INITIAL_TICKETS);
             const localMatch = local.find(
-              t => t.ticketNumber.toUpperCase() === clean ||
-                   t.id.toUpperCase() === clean ||
+              t => t.ticketNumber?.toUpperCase() === clean ||
+                   t.id?.toUpperCase() === clean ||
                    t.trackingToken?.toUpperCase() === clean
             ) || null;
             callback(localMatch);
@@ -328,7 +415,7 @@ class DatabaseService {
           console.warn('Single ticket snapshot error:', error);
           const local = getLocal<RepairTicket[]>(LOCAL_STORAGE_KEYS.TICKETS, INITIAL_TICKETS);
           const localMatch = local.find(
-            t => t.ticketNumber.toUpperCase() === clean || t.id.toUpperCase() === clean
+            t => t.ticketNumber?.toUpperCase() === clean || t.id?.toUpperCase() === clean
           ) || null;
           callback(localMatch);
         }
@@ -336,7 +423,7 @@ class DatabaseService {
     } catch {
       const local = getLocal<RepairTicket[]>(LOCAL_STORAGE_KEYS.TICKETS, INITIAL_TICKETS);
       const localMatch = local.find(
-        t => t.ticketNumber.toUpperCase() === clean || t.id.toUpperCase() === clean
+        t => t.ticketNumber?.toUpperCase() === clean || t.id?.toUpperCase() === clean
       ) || null;
       callback(localMatch);
       return () => {};
@@ -345,19 +432,22 @@ class DatabaseService {
 
   // --- Inventory Operations ---
   async saveInventoryItem(item: InventoryItem): Promise<void> {
-    try {
-      await setDoc(doc(db, 'inventory', item.id), item);
-    } catch (e) {
-      console.warn('Firestore inventory save failed:', e);
-    }
+    const cleaned = cleanFirestoreData(item);
     const local = getLocal<InventoryItem[]>(LOCAL_STORAGE_KEYS.INVENTORY, INITIAL_INVENTORY);
     const idx = local.findIndex(i => i.id === item.id);
     if (idx >= 0) {
-      local[idx] = item;
+      local[idx] = cleaned;
     } else {
-      local.push(item);
+      local.push(cleaned);
     }
     setLocal(LOCAL_STORAGE_KEYS.INVENTORY, local);
+    this.notifyInventory(local);
+
+    try {
+      await setDoc(doc(db, 'inventory', item.id), cleaned);
+    } catch (e) {
+      console.warn('Firestore inventory save failed:', e);
+    }
   }
 
   async adjustStock(itemId: string, diffQuantity: number): Promise<void> {
@@ -369,6 +459,9 @@ class DatabaseService {
     target.stockQuantity = newQty;
     target.updatedAt = new Date().toISOString();
 
+    setLocal(LOCAL_STORAGE_KEYS.INVENTORY, local);
+    this.notifyInventory(local);
+
     try {
       await updateDoc(doc(db, 'inventory', itemId), {
         stockQuantity: newQty,
@@ -377,29 +470,29 @@ class DatabaseService {
     } catch (e) {
       console.warn('Firestore adjustStock failed:', e);
     }
-    setLocal(LOCAL_STORAGE_KEYS.INVENTORY, local);
   }
 
   async deleteInventoryItem(itemId: string): Promise<void> {
+    const local = getLocal<InventoryItem[]>(LOCAL_STORAGE_KEYS.INVENTORY, INITIAL_INVENTORY).filter(i => i.id !== itemId);
+    setLocal(LOCAL_STORAGE_KEYS.INVENTORY, local);
+    this.notifyInventory(local);
+
     try {
       await deleteDoc(doc(db, 'inventory', itemId));
     } catch (e) {
       console.warn('Firestore delete inventory failed:', e);
     }
-    const local = getLocal<InventoryItem[]>(LOCAL_STORAGE_KEYS.INVENTORY, INITIAL_INVENTORY).filter(i => i.id !== itemId);
-    setLocal(LOCAL_STORAGE_KEYS.INVENTORY, local);
   }
 
-  private async reconcilePartsStock(newParts: RepairTicket['partsUsed'], oldParts: RepairTicket['partsUsed']): Promise<void> {
-    // Calculate difference
+  private async reconcilePartsStock(newParts: RepairTicket['partsUsed'] = [], oldParts: RepairTicket['partsUsed'] = []): Promise<void> {
     const mapDiff = new Map<string, number>();
 
     // Reverse old usage (add back to stock)
-    for (const op of oldParts) {
+    for (const op of (oldParts || [])) {
       mapDiff.set(op.itemId, (mapDiff.get(op.itemId) || 0) + op.quantity);
     }
     // Deduct new usage
-    for (const np of newParts) {
+    for (const np of (newParts || [])) {
       mapDiff.set(np.itemId, (mapDiff.get(np.itemId) || 0) - np.quantity);
     }
 
@@ -412,29 +505,37 @@ class DatabaseService {
 
   // --- Settings ---
   async saveSettings(settings: ShopSettings): Promise<void> {
-    const payload = { ...settings, updatedAt: new Date().toISOString() };
+    const payload = cleanFirestoreData({ ...settings, updatedAt: new Date().toISOString() });
+    setLocal(LOCAL_STORAGE_KEYS.SETTINGS, payload);
+    this.notifySettings(payload);
+
     try {
       await setDoc(doc(db, 'shop_settings', 'default'), payload);
     } catch (e) {
       console.warn('Firestore saveSettings failed:', e);
     }
-    setLocal(LOCAL_STORAGE_KEYS.SETTINGS, payload);
   }
 
   // Helper to generate next Ticket Number: REP-YYYYMMDD-001
-  generateNextTicketNumber(existingTickets: RepairTicket[]): string {
+  generateNextTicketNumber(existingTickets: RepairTicket[] = []): string {
     const today = new Date();
     const dateStr = today.toISOString().split('T')[0].replace(/-/g, '');
     const prefix = `REP-${dateStr}-`;
 
-    const todaysTickets = existingTickets.filter(t => t.ticketNumber?.startsWith(prefix));
+    const list = Array.isArray(existingTickets) && existingTickets.length > 0
+      ? existingTickets
+      : getLocal<RepairTicket[]>(LOCAL_STORAGE_KEYS.TICKETS, INITIAL_TICKETS);
+
+    const todaysTickets = list.filter(t => t?.ticketNumber?.startsWith(prefix));
     let maxSeq = 0;
     for (const t of todaysTickets) {
-      const parts = t.ticketNumber.split('-');
-      if (parts.length >= 3) {
-        const seq = parseInt(parts[2], 10);
-        if (!isNaN(seq) && seq > maxSeq) {
-          maxSeq = seq;
+      if (t?.ticketNumber) {
+        const parts = t.ticketNumber.split('-');
+        if (parts.length >= 3) {
+          const seq = parseInt(parts[2], 10);
+          if (!isNaN(seq) && seq > maxSeq) {
+            maxSeq = seq;
+          }
         }
       }
     }

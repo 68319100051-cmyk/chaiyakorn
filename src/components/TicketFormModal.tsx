@@ -24,7 +24,7 @@ import {
 interface TicketFormModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (ticket: RepairTicket, previousParts: UsedPart[]) => void;
+  onSave: (ticket: RepairTicket, previousParts: UsedPart[]) => Promise<void> | void;
   ticketToEdit?: RepairTicket | null;
   inventory: InventoryItem[];
   allTickets: RepairTicket[];
@@ -102,6 +102,7 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'transfer' | 'credit' | 'unpaid'>('unpaid');
   const [receivedDate, setReceivedDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [estimatedCompletionDate, setEstimatedCompletionDate] = useState<string>('');
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   // Parts Used State
   const [partsUsed, setPartsUsed] = useState<UsedPart[]>([]);
@@ -111,6 +112,7 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
 
   // Initialize form
   useEffect(() => {
+    setIsSubmitting(false);
     if (ticketToEdit) {
       setTicketNumber(ticketToEdit.ticketNumber);
       setCustomerName(ticketToEdit.customerName);
@@ -244,64 +246,72 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
   };
 
   // Handle Submit
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!customerName.trim() || !customerPhone.trim()) {
-      alert('กรุณากรอกชื่อและเบอร์โทรศัพท์ของลูกค้า');
+    if (!customerName.trim()) {
+      alert('กรุณากรอกชื่อลูกค้า');
       return;
     }
-    if (!model.trim()) {
-      alert('กรุณากรอกรุ่นของอุปกรณ์');
+    if (!customerPhone.trim()) {
+      alert('กรุณากรอกเบอร์โทรศัพท์ลูกค้า');
       return;
     }
-    if (!problemDescription.trim()) {
-      alert('กรุณาระบุอาการเสียเบื้องต้น');
-      return;
-    }
+    const safeModel = model.trim() || 'ไม่ระบุรุ่น';
+    const safeProblem = problemDescription.trim() || 'ตรวจเช็คอาการทั่วไป';
 
     const now = new Date().toISOString();
+    const finalTicketNumber = ticketNumber.trim() || generateNextTicketNumber();
+
     const ticketData: RepairTicket = {
       id: ticketToEdit ? ticketToEdit.id : `ticket-${Date.now()}`,
-      ticketNumber: ticketNumber || generateNextTicketNumber(),
+      ticketNumber: finalTicketNumber,
       customerName: customerName.trim(),
       customerPhone: customerPhone.trim(),
-      customerLineId: customerLineId.trim() || undefined,
-      customerAddress: customerAddress.trim() || undefined,
+      customerLineId: customerLineId.trim() || '',
+      customerAddress: customerAddress.trim() || '',
       deviceType,
-      brand,
-      model: model.trim(),
-      serialNumber: serialNumber.trim() || undefined,
-      color: color.trim() || undefined,
-      accessories,
-      problemDescription: problemDescription.trim(),
-      initialConditionNotes: initialConditionNotes.trim() || undefined,
-      technicianNotes: technicianNotes.trim() || undefined,
-      technicianName,
+      brand: brand || 'อื่นๆ',
+      model: safeModel,
+      serialNumber: serialNumber.trim() || '',
+      color: color.trim() || '',
+      accessories: accessories || [],
+      problemDescription: safeProblem,
+      initialConditionNotes: initialConditionNotes.trim() || '',
+      technicianNotes: technicianNotes.trim() || '',
+      technicianName: technicianName || 'ช่างเอก',
       status,
-      estimatedCost,
-      laborCost,
-      partsCost,
-      discount,
-      totalAmount,
-      isPaid,
-      paymentMethod,
-      partsUsed,
-      trackingToken: ticketToEdit ? ticketToEdit.trackingToken : ticketNumber,
-      lineNotified: ticketToEdit ? ticketToEdit.lineNotified : false,
-      lastLineNotifiedAt: ticketToEdit?.lastLineNotifiedAt,
-      receivedDate,
-      estimatedCompletionDate: estimatedCompletionDate || undefined,
+      estimatedCost: Number(estimatedCost) || 0,
+      laborCost: Number(laborCost) || 0,
+      partsCost: Number(partsCost) || 0,
+      discount: Number(discount) || 0,
+      totalAmount: Math.max(0, Number(totalAmount) || 0),
+      isPaid: Boolean(isPaid),
+      paymentMethod: paymentMethod || 'unpaid',
+      partsUsed: partsUsed || [],
+      trackingToken: (ticketToEdit?.trackingToken) || finalTicketNumber,
+      lineNotified: Boolean(ticketToEdit?.lineNotified),
+      lastLineNotifiedAt: ticketToEdit?.lastLineNotifiedAt || '',
+      receivedDate: receivedDate || new Date().toISOString().split('T')[0],
+      estimatedCompletionDate: estimatedCompletionDate || '',
       completedDate: (status === 'repaired' || status === 'ready_pickup' || status === 'completed')
         ? (ticketToEdit?.completedDate || new Date().toISOString().split('T')[0])
-        : undefined,
+        : '',
       deliveredDate: status === 'completed'
         ? (ticketToEdit?.deliveredDate || new Date().toISOString().split('T')[0])
-        : undefined,
-      createdAt: ticketToEdit ? ticketToEdit.createdAt : now,
+        : '',
+      createdAt: ticketToEdit?.createdAt || now,
       updatedAt: now
     };
 
-    onSave(ticketData, initialPartsUsed);
+    try {
+      setIsSubmitting(true);
+      await onSave(ticketData, initialPartsUsed);
+    } catch (err) {
+      console.error('Error saving repair ticket:', err);
+      alert('เกิดข้อผิดพลาดในการบันทึกข้อมูล กรุณาลองใหม่อีกครั้ง');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -1076,15 +1086,24 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+              disabled={isSubmitting}
+              className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors disabled:opacity-50"
             >
               ยกเลิก
             </button>
             <button
               type="submit"
-              className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-bold text-xs shadow-md shadow-blue-500/20 active:scale-95 transition-all cursor-pointer"
+              disabled={isSubmitting}
+              className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-bold text-xs shadow-md shadow-blue-500/20 active:scale-95 transition-all cursor-pointer disabled:opacity-50 flex items-center gap-2"
             >
-              บันทึกใบรับซ่อม
+              {isSubmitting ? (
+                <>
+                  <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                  <span>กำลังบันทึกข้อมูล...</span>
+                </>
+              ) : (
+                <span>บันทึกใบรับซ่อม</span>
+              )}
             </button>
           </div>
         </form>
