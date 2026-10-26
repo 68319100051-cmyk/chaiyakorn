@@ -326,24 +326,30 @@ export const CustomerPublicPortal: React.FC<CustomerPublicPortalProps> = ({
               <div className="pt-2 text-xs space-y-1.5">
                 <div className="flex justify-between text-slate-400">
                   <span>ค่าบริการ/แรงตรวจเช็ค:</span>
-                  <span>฿{ticket.laborCost.toLocaleString()}</span>
+                  <span>฿{(ticket.laborCost || 0).toLocaleString()}</span>
                 </div>
-                {ticket.partsCost > 0 && (
+                {(ticket.partsCost || 0) > 0 && (
                   <div className="flex justify-between text-slate-400">
                     <span>ค่าอะไหล่รวม:</span>
-                    <span>฿{ticket.partsCost.toLocaleString()}</span>
+                    <span>฿{(ticket.partsCost || 0).toLocaleString()}</span>
                   </div>
                 )}
-                {ticket.discount > 0 && (
-                  <div className="flex justify-between text-rose-400">
-                    <span>ส่วนลด:</span>
-                    <span>-฿{ticket.discount.toLocaleString()}</span>
-                  </div>
+                {(Number(ticket.discount) || 0) > 0 && (
+                  <>
+                    <div className="flex justify-between text-slate-500 pt-1 border-t border-slate-700/60 text-[11px]">
+                      <span>รวมค่าแรงและอะไหล่:</span>
+                      <span>฿{((ticket.laborCost || 0) + (ticket.partsCost || 0)).toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between text-rose-400 font-semibold bg-rose-950/40 px-2 py-1 rounded border border-rose-900/60">
+                      <span>✓ ส่วนลดพิเศษจากทางร้าน:</span>
+                      <span>-฿{(Number(ticket.discount) || 0).toLocaleString()}</span>
+                    </div>
+                  </>
                 )}
                 <div className="pt-2 border-t border-slate-700 flex justify-between items-baseline">
-                  <span className="font-bold text-sm text-white">ยอดสุทธิทั้งสิ้น:</span>
+                  <span className="font-bold text-sm text-white">ยอดสุทธิที่ต้องชำระ:</span>
                   <span className="text-xl font-black text-blue-400">
-                    ฿{ticket.totalAmount.toLocaleString()}
+                    ฿{(ticket.totalAmount || 0).toLocaleString()}
                   </span>
                 </div>
                 <div className="text-right text-[11px]">

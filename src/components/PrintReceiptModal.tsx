@@ -326,21 +326,27 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
                 <div className="space-y-1 text-[10px] p-2 rounded-lg bg-slate-50 border border-slate-200">
                   <div className="flex justify-between text-slate-600">
                     <span>ค่าแรง/บริการ:</span>
-                    <span className="font-medium">฿{ticket.laborCost.toLocaleString()}</span>
+                    <span className="font-medium">฿{(ticket.laborCost || 0).toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between text-slate-600">
                     <span>ค่าอะไหล่รวม:</span>
-                    <span className="font-medium">฿{ticket.partsCost.toLocaleString()}</span>
+                    <span className="font-medium">฿{(ticket.partsCost || 0).toLocaleString()}</span>
                   </div>
-                  {ticket.discount > 0 && (
-                    <div className="flex justify-between text-rose-600 font-medium">
-                      <span>ส่วนลด:</span>
-                      <span>-฿{ticket.discount.toLocaleString()}</span>
-                    </div>
+                  {(Number(ticket.discount) || 0) > 0 && (
+                    <>
+                      <div className="flex justify-between text-slate-500 pt-0.5 border-t border-slate-200 text-[9px]">
+                        <span>รวมก่อนหักส่วนลด:</span>
+                        <span>฿{((ticket.laborCost || 0) + (ticket.partsCost || 0)).toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between text-rose-600 font-bold">
+                        <span>ส่วนลดพิเศษ:</span>
+                        <span>-฿{(Number(ticket.discount) || 0).toLocaleString()}</span>
+                      </div>
+                    </>
                   )}
                   <div className="flex justify-between text-xs font-black text-slate-900 pt-1 border-t border-slate-300">
                     <span>ยอดสุทธิทั้งสิ้น:</span>
-                    <span className="text-blue-700 text-sm">฿{ticket.totalAmount.toLocaleString()}</span>
+                    <span className="text-blue-700 text-sm">฿{(ticket.totalAmount || 0).toLocaleString()}</span>
                   </div>
                   <div className="text-right text-[9px] text-slate-500">
                     สถานะ: <span className="font-bold text-slate-800">{ticket.isPaid ? 'ชำระเงินเรียบร้อยแล้ว' : 'ชำระเมื่อมารับเครื่อง'}</span>
@@ -405,23 +411,29 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
               <div className="py-2 border-b border-dashed border-slate-400 text-[10px] space-y-1">
                 <div className="flex justify-between">
                   <span>ค่าบริการ/แรง:</span>
-                  <span>฿{ticket.laborCost.toLocaleString()}</span>
+                  <span>฿{(ticket.laborCost || 0).toLocaleString()}</span>
                 </div>
                 {ticket.partsUsed?.map((p, i) => (
                   <div key={i} className="flex justify-between">
                     <span className="truncate max-w-[130px]">{p.itemName}:</span>
-                    <span>฿{p.totalPrice.toLocaleString()}</span>
+                    <span>฿{(p.totalPrice || 0).toLocaleString()}</span>
                   </div>
                 ))}
-                {ticket.discount > 0 && (
-                  <div className="flex justify-between text-rose-600">
-                    <span>ส่วนลด:</span>
-                    <span>-฿{ticket.discount.toLocaleString()}</span>
-                  </div>
+                {(Number(ticket.discount) || 0) > 0 && (
+                  <>
+                    <div className="flex justify-between text-slate-500 pt-1 border-t border-dotted border-slate-300 text-[9px]">
+                      <span>รวมก่อนลด:</span>
+                      <span>฿{((ticket.laborCost || 0) + (ticket.partsCost || 0)).toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between text-rose-600 font-bold">
+                      <span>ส่วนลด:</span>
+                      <span>-฿{(Number(ticket.discount) || 0).toLocaleString()}</span>
+                    </div>
+                  </>
                 )}
                 <div className="flex justify-between font-bold text-xs pt-1 border-t border-slate-300">
                   <span>ยอดสุทธิ:</span>
-                  <span>฿{ticket.totalAmount.toLocaleString()}</span>
+                  <span>฿{(ticket.totalAmount || 0).toLocaleString()}</span>
                 </div>
               </div>
 

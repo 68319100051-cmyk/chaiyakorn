@@ -94,8 +94,10 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
   const [technicianName, setTechnicianName] = useState('ช่างเอก');
   const [status, setStatus] = useState<RepairStatus>('pending');
   const [estimatedCost, setEstimatedCost] = useState<number>(0);
-  const [laborCost, setLaborCost] = useState<number>(300);
-  const [discount, setDiscount] = useState<number>(0);
+  const [laborCostInput, setLaborCostInput] = useState<string>('300');
+  const [discountInput, setDiscountInput] = useState<string>('0');
+  const [discountMode, setDiscountMode] = useState<'baht' | 'percent'>('baht');
+  const [discountPercentInput, setDiscountPercentInput] = useState<string>('10');
   const [isPaid, setIsPaid] = useState<boolean>(false);
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'transfer' | 'credit' | 'unpaid'>('unpaid');
   const [receivedDate, setReceivedDate] = useState<string>(new Date().toISOString().split('T')[0]);
@@ -127,8 +129,9 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
       setTechnicianName(ticketToEdit.technicianName || 'ช่างเอก');
       setStatus(ticketToEdit.status);
       setEstimatedCost(ticketToEdit.estimatedCost || 0);
-      setLaborCost(ticketToEdit.laborCost || 0);
-      setDiscount(ticketToEdit.discount || 0);
+      setLaborCostInput(String(ticketToEdit.laborCost ?? 300));
+      setDiscountInput(String(ticketToEdit.discount ?? 0));
+      setDiscountMode('baht');
       setIsPaid(ticketToEdit.isPaid || false);
       setPaymentMethod(ticketToEdit.paymentMethod || 'unpaid');
       setReceivedDate(ticketToEdit.receivedDate || new Date().toISOString().split('T')[0]);
@@ -154,8 +157,9 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
       setTechnicianName('ช่างเอก');
       setStatus('pending');
       setEstimatedCost(500);
-      setLaborCost(300);
-      setDiscount(0);
+      setLaborCostInput('300');
+      setDiscountInput('0');
+      setDiscountMode('baht');
       setIsPaid(false);
       setPaymentMethod('unpaid');
       setReceivedDate(new Date().toISOString().split('T')[0]);
@@ -168,9 +172,22 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
     }
   }, [ticketToEdit, isOpen]);
 
-  // Calculate parts total cost
+  // Financial calculations
+  const laborCost = Math.max(0, parseFloat(laborCostInput) || 0);
   const partsCost = partsUsed.reduce((sum, p) => sum + p.totalPrice, 0);
-  const totalAmount = Math.max(0, (laborCost || 0) + partsCost - (discount || 0));
+  const subtotalBeforeDiscount = laborCost + partsCost;
+
+  let calculatedDiscount = 0;
+  if (discountMode === 'baht') {
+    calculatedDiscount = Math.max(0, parseFloat(discountInput) || 0);
+  } else {
+    const pct = Math.max(0, Math.min(100, parseFloat(discountPercentInput) || 0));
+    calculatedDiscount = Math.round((subtotalBeforeDiscount * pct) / 100);
+  }
+
+  // Effective discount cannot exceed total of labor + parts
+  const discount = Math.min(calculatedDiscount, subtotalBeforeDiscount);
+  const totalAmount = Math.max(0, subtotalBeforeDiscount - discount);
 
   // Toggle accessory
   const toggleAccessory = (item: string) => {
@@ -785,49 +802,241 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
             </div>
 
             {/* Financials Calculation Box */}
-            <div className="bg-slate-50 dark:bg-slate-900/80 rounded-xl p-4 border border-slate-200 dark:border-slate-700 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-              <div>
-                <label className="block font-semibold text-slate-600 dark:text-slate-400 mb-1">
-                  ค่าแรง/ค่าบริการ (฿)
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  value={laborCost}
-                  onChange={e => setLaborCost(Math.max(0, parseFloat(e.target.value) || 0))}
-                  className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold"
-                />
+            <div className="bg-slate-50 dark:bg-slate-900/90 rounded-2xl p-4 border border-slate-200 dark:border-slate-700 space-y-3.5 text-xs">
+              <div className="flex items-center justify-between pb-1 border-b border-slate-200 dark:border-slate-800">
+                <span className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                  <span>💰 คำนวณค่าบริการ อะไหล่ และส่วนลด</span>
+                </span>
+                <span className="text-[11px] text-slate-500 font-medium">
+                  รวมก่อนลด: <span className="font-bold text-slate-800 dark:text-slate-200">฿{subtotalBeforeDiscount.toLocaleString()}</span>
+                </span>
               </div>
 
-              <div>
-                <label className="block font-semibold text-slate-600 dark:text-slate-400 mb-1">
-                  ค่าอะไหล่รวม (฿)
-                </label>
-                <div className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 font-bold text-slate-700 dark:text-slate-300">
-                  ฿{partsCost.toLocaleString()}
+              {/* 3 Main Input Columns */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {/* 1. Labor Cost */}
+                <div>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    ค่าแรง/บริการตรวจเช็ค (฿)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="0"
+                    value={laborCostInput}
+                    onChange={e => setLaborCostInput(e.target.value)}
+                    onBlur={() => {
+                      if (!laborCostInput.trim()) setLaborCostInput('0');
+                    }}
+                    className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                  />
+                  <div className="flex gap-1 mt-1 text-[10px]">
+                    <button
+                      type="button"
+                      onClick={() => setLaborCostInput('200')}
+                      className="px-1.5 py-0.5 rounded bg-slate-200/70 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-300"
+                    >
+                      200
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLaborCostInput('300')}
+                      className="px-1.5 py-0.5 rounded bg-slate-200/70 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-300"
+                    >
+                      300
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLaborCostInput('400')}
+                      className="px-1.5 py-0.5 rounded bg-slate-200/70 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-300"
+                    >
+                      400
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLaborCostInput('500')}
+                      className="px-1.5 py-0.5 rounded bg-slate-200/70 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-300"
+                    >
+                      500
+                    </button>
+                  </div>
+                </div>
+
+                {/* 2. Parts Total Cost (Auto calculated from selected inventory) */}
+                <div>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    ค่าอะไหล่รวม ({partsUsed.length} รายการ)
+                  </label>
+                  <div className="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-slate-800 dark:text-slate-200 h-[38px] flex items-center justify-between">
+                    <span>฿{partsCost.toLocaleString()}</span>
+                    <span className="text-[10px] text-slate-400 font-normal">คำนวณจากตาราง</span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    {partsUsed.length > 0 ? `ใช้อะไหล่จากคลัง ${partsUsed.length} รายการ` : 'ยังไม่มีการเลือกเบิกอะไหล่'}
+                  </p>
+                </div>
+
+                {/* 3. Discount Controls */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="font-semibold text-slate-700 dark:text-slate-300">
+                      ส่วนลด (Discount)
+                    </label>
+                    <div className="flex rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 text-[10px] font-bold">
+                      <button
+                        type="button"
+                        onClick={() => setDiscountMode('baht')}
+                        className={`px-2 py-0.5 transition-colors ${
+                          discountMode === 'baht'
+                            ? 'bg-rose-600 text-white'
+                            : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100'
+                        }`}
+                      >
+                        ฿ บาท
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDiscountMode('percent')}
+                        className={`px-2 py-0.5 transition-colors ${
+                          discountMode === 'percent'
+                            ? 'bg-rose-600 text-white'
+                            : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100'
+                        }`}
+                      >
+                        %
+                      </button>
+                    </div>
+                  </div>
+
+                  {discountMode === 'baht' ? (
+                    <div className="relative">
+                      <input
+                        type="number"
+                        min="0"
+                        max={subtotalBeforeDiscount}
+                        placeholder="0"
+                        value={discountInput}
+                        onChange={e => setDiscountInput(e.target.value)}
+                        onBlur={() => {
+                          if (!discountInput.trim()) setDiscountInput('0');
+                        }}
+                        className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-rose-600 dark:text-rose-400 focus:ring-2 focus:ring-rose-500"
+                      />
+                      <span className="absolute right-3 top-2 font-bold text-slate-400 text-xs">฿</span>
+                    </div>
+                  ) : (
+                    <div className="relative">
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        placeholder="0"
+                        value={discountPercentInput}
+                        onChange={e => setDiscountPercentInput(e.target.value)}
+                        onBlur={() => {
+                          if (!discountPercentInput.trim()) setDiscountPercentInput('0');
+                        }}
+                        className="w-full px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-rose-600 dark:text-rose-400 focus:ring-2 focus:ring-rose-500"
+                      />
+                      <span className="absolute right-3 top-2 font-bold text-slate-400 text-xs">%</span>
+                    </div>
+                  )}
+
+                  {/* Quick Preset Buttons */}
+                  <div className="flex flex-wrap items-center gap-1 mt-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDiscountMode('baht');
+                        setDiscountInput('0');
+                      }}
+                      className="px-1.5 py-0.5 rounded bg-slate-200/70 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-300 text-[10px]"
+                    >
+                      ไม่ลด
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDiscountMode('baht');
+                        setDiscountInput('50');
+                      }}
+                      className="px-1.5 py-0.5 rounded bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 hover:bg-rose-100 border border-rose-200 dark:border-rose-900 text-[10px] font-semibold"
+                    >
+                      -฿50
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDiscountMode('baht');
+                        setDiscountInput('100');
+                      }}
+                      className="px-1.5 py-0.5 rounded bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 hover:bg-rose-100 border border-rose-200 dark:border-rose-900 text-[10px] font-semibold"
+                    >
+                      -฿100
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDiscountMode('baht');
+                        setDiscountInput('200');
+                      }}
+                      className="px-1.5 py-0.5 rounded bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 hover:bg-rose-100 border border-rose-200 dark:border-rose-900 text-[10px] font-semibold"
+                    >
+                      -฿200
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDiscountMode('percent');
+                        setDiscountPercentInput('10');
+                      }}
+                      className="px-1.5 py-0.5 rounded bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 hover:bg-purple-100 border border-purple-200 dark:border-purple-900 text-[10px] font-semibold"
+                    >
+                      -10%
+                    </button>
+                    {laborCost > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDiscountMode('baht');
+                          setDiscountInput(String(laborCost));
+                        }}
+                        className="px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 hover:bg-amber-100 border border-amber-200 dark:border-amber-900 text-[10px] font-semibold"
+                      >
+                        ฟรีค่าแรง
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
 
-              <div>
-                <label className="block font-semibold text-slate-600 dark:text-slate-400 mb-1">
-                  ส่วนลด (฿)
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  value={discount}
-                  onChange={e => setDiscount(Math.max(0, parseFloat(e.target.value) || 0))}
-                  className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-rose-600"
-                />
-              </div>
+              {/* Bottom Summary Pill */}
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-slate-800 dark:to-slate-800/90 rounded-xl p-3 border border-blue-200 dark:border-blue-900/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                      รวมค่าแรง (฿{laborCost.toLocaleString()}) + อะไหล่ (฿{partsCost.toLocaleString()}) =
+                    </span>
+                    <span className="font-semibold text-slate-700 dark:text-slate-300">
+                      ฿{subtotalBeforeDiscount.toLocaleString()}
+                    </span>
+                  </div>
+                  {discount > 0 && (
+                    <div className="flex items-center gap-2 text-rose-600 dark:text-rose-400 font-semibold text-[11px]">
+                      <span>✓ หักส่วนลดที่มอบให้ลูกค้า:</span>
+                      <span>-฿{discount.toLocaleString()} {discountMode === 'percent' ? `(${discountPercentInput}%)` : ''}</span>
+                    </div>
+                  )}
+                </div>
 
-              <div className="bg-blue-50 dark:bg-blue-950/60 p-2.5 rounded-lg border border-blue-200 dark:border-blue-800 text-right">
-                <span className="block text-[11px] font-semibold text-blue-700 dark:text-blue-300">
-                  ยอดรวมสุทธิทั้งสิ้น
-                </span>
-                <span className="text-xl font-extrabold text-blue-900 dark:text-white">
-                  ฿{totalAmount.toLocaleString()}
-                </span>
+                <div className="text-right shrink-0">
+                  <span className="block text-[11px] font-bold text-blue-700 dark:text-blue-300 uppercase tracking-wider">
+                    ยอดชำระสุทธิทั้งสิ้น
+                  </span>
+                  <span className="text-2xl font-black text-blue-900 dark:text-white">
+                    ฿{totalAmount.toLocaleString()}
+                  </span>
+                </div>
               </div>
             </div>
 

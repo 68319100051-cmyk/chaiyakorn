@@ -12,7 +12,8 @@ import {
   Download,
   Filter,
   ArrowRight,
-  ShieldAlert
+  ShieldAlert,
+  Tag
 } from 'lucide-react';
 
 interface DailyReportViewProps {
@@ -51,7 +52,7 @@ export const DailyReportView: React.FC<DailyReportViewProps> = ({
   // Financial calculations for the selected day
   const dailyLaborRevenue = dailyCompletedTickets.reduce((sum, t) => sum + (t.laborCost || 0), 0);
   const dailyPartsRevenue = dailyCompletedTickets.reduce((sum, t) => sum + (t.partsCost || 0), 0);
-  const dailyDiscounts = dailyCompletedTickets.reduce((sum, t) => sum + (t.discount || 0), 0);
+  const dailyDiscounts = dailyCompletedTickets.reduce((sum, t) => sum + (Number(t.discount) || 0), 0);
   const dailyTotalRevenue = dailyCompletedTickets
     .filter(t => t.isPaid)
     .reduce((sum, t) => sum + (t.totalAmount || 0), 0);
@@ -85,9 +86,9 @@ export const DailyReportView: React.FC<DailyReportViewProps> = ({
 
   // Export to CSV
   const exportToCSV = () => {
-    const headers = ['TicketNumber,Date,Customer,Phone,Device,Brand,Model,SN,Status,Labor,Parts,Total,Paid'];
+    const headers = ['TicketNumber,Date,Customer,Phone,Device,Brand,Model,SN,Status,Labor,Parts,Discount,Total,Paid'];
     const rows = dailyCompletedTickets.map(t =>
-      `"${t.ticketNumber}","${t.receivedDate}","${t.customerName}","${t.customerPhone}","${t.deviceType}","${t.brand}","${t.model}","${t.serialNumber || ''}","${t.status}",${t.laborCost},${t.partsCost},${t.totalAmount},"${t.isPaid ? 'Paid' : 'Unpaid'}"`
+      `"${t.ticketNumber}","${t.receivedDate}","${t.customerName}","${t.customerPhone}","${t.deviceType}","${t.brand}","${t.model}","${t.serialNumber || ''}","${t.status}",${t.laborCost || 0},${t.partsCost || 0},${t.discount || 0},${t.totalAmount || 0},"${t.isPaid ? 'Paid' : 'Unpaid'}"`
     );
     const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers, ...rows].join('\n');
     const encodedUri = encodeURI(csvContent);
@@ -179,11 +180,11 @@ export const DailyReportView: React.FC<DailyReportViewProps> = ({
             </div>
           </div>
 
-          {/* Revenue Breakdown KPI Cards */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-white dark:bg-slate-800 rounded-xl p-5 border border-slate-200 dark:border-slate-700 shadow-sm">
+          {/* Revenue Breakdown KPI Cards (5 Cards) */}
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3.5">
+            <div className="bg-white dark:bg-slate-800 rounded-xl p-4 sm:p-5 border border-slate-200 dark:border-slate-700 shadow-sm">
               <div className="flex items-center justify-between text-xs text-slate-500">
-                <span className="font-semibold">ยอดรับชำระสุทธิประจำวัน</span>
+                <span className="font-semibold">ยอดรับชำระสุทธิ</span>
                 <DollarSign className="w-4 h-4 text-emerald-500" />
               </div>
               <p className="text-2xl sm:text-3xl font-extrabold text-emerald-600 dark:text-emerald-400 mt-2">
@@ -194,7 +195,7 @@ export const DailyReportView: React.FC<DailyReportViewProps> = ({
               </p>
             </div>
 
-            <div className="bg-white dark:bg-slate-800 rounded-xl p-5 border border-slate-200 dark:border-slate-700 shadow-sm">
+            <div className="bg-white dark:bg-slate-800 rounded-xl p-4 sm:p-5 border border-slate-200 dark:border-slate-700 shadow-sm">
               <div className="flex items-center justify-between text-xs text-slate-500">
                 <span className="font-semibold">รายได้ค่าแรง/บริการ</span>
                 <Wrench className="w-4 h-4 text-blue-500" />
@@ -203,33 +204,46 @@ export const DailyReportView: React.FC<DailyReportViewProps> = ({
                 ฿{dailyLaborRevenue.toLocaleString()}
               </p>
               <p className="text-[11px] text-slate-500 mt-1">
-                กำไรขั้นต้นจากค่าแรงช่าง
+                กำไรจากค่าแรงช่าง
               </p>
             </div>
 
-            <div className="bg-white dark:bg-slate-800 rounded-xl p-5 border border-slate-200 dark:border-slate-700 shadow-sm">
+            <div className="bg-white dark:bg-slate-800 rounded-xl p-4 sm:p-5 border border-slate-200 dark:border-slate-700 shadow-sm">
               <div className="flex items-center justify-between text-xs text-slate-500">
-                <span className="font-semibold">รายได้จากค่าอะไหล่</span>
+                <span className="font-semibold">รายได้ค่าอะไหล่</span>
                 <Package className="w-4 h-4 text-purple-500" />
               </div>
               <p className="text-2xl sm:text-3xl font-bold text-slate-800 dark:text-white mt-2">
                 ฿{dailyPartsRevenue.toLocaleString()}
               </p>
               <p className="text-[11px] text-slate-500 mt-1">
-                จากรายการอะไหล่ที่เปลี่ยน
+                จากรายการอะไหล่
               </p>
             </div>
 
-            <div className="bg-white dark:bg-slate-800 rounded-xl p-5 border border-slate-200 dark:border-slate-700 shadow-sm">
+            <div className="bg-white dark:bg-slate-800 rounded-xl p-4 sm:p-5 border border-rose-200 dark:border-rose-900/60 shadow-sm bg-rose-50/20 dark:bg-rose-950/20">
+              <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                <span className="font-semibold text-rose-600 dark:text-rose-400">ส่วนลดที่ให้ลูกค้า</span>
+                <Tag className="w-4 h-4 text-rose-500" />
+              </div>
+              <p className="text-2xl sm:text-3xl font-extrabold text-rose-600 dark:text-rose-400 mt-2">
+                ฿{dailyDiscounts.toLocaleString()}
+              </p>
+              <p className="text-[11px] text-slate-500 mt-1">
+                ลดพิเศษให้ลูกค้า
+              </p>
+            </div>
+
+            <div className="bg-white dark:bg-slate-800 rounded-xl p-4 sm:p-5 border border-slate-200 dark:border-slate-700 shadow-sm col-span-2 lg:col-span-1">
               <div className="flex items-center justify-between text-xs text-slate-500">
-                <span className="font-semibold">เครื่องรับเข้าใหม่วันนี้</span>
+                <span className="font-semibold">เครื่องรับเข้าใหม่</span>
                 <Calendar className="w-4 h-4 text-cyan-500" />
               </div>
               <p className="text-2xl sm:text-3xl font-bold text-cyan-600 dark:text-cyan-400 mt-2">
                 {dailyReceivedTickets.length} <span className="text-xs font-normal text-slate-500">เครื่อง</span>
               </p>
               <p className="text-[11px] text-slate-500 mt-1">
-                เปิดใบรับซ่อมใหม่ในวันนี้
+                เปิดใบรับซ่อมวันนี้
               </p>
             </div>
           </div>
@@ -289,6 +303,7 @@ export const DailyReportView: React.FC<DailyReportViewProps> = ({
                       <th className="py-2.5 px-3">งานที่ทำ</th>
                       <th className="py-2.5 px-3 text-right">ค่าแรง</th>
                       <th className="py-2.5 px-3 text-right">ค่าอะไหล่</th>
+                      <th className="py-2.5 px-3 text-right">ส่วนลด</th>
                       <th className="py-2.5 px-3 text-right">ยอดสุทธิ</th>
                       <th className="py-2.5 px-3 text-center">วิธีชำระ</th>
                       <th className="py-2.5 px-3 text-center">พิมพ์</th>
@@ -313,10 +328,19 @@ export const DailyReportView: React.FC<DailyReportViewProps> = ({
                         <td className="py-3 px-3 max-w-xs truncate text-slate-600 dark:text-slate-300">
                           {t.technicianNotes || t.problemDescription}
                         </td>
-                        <td className="py-3 px-3 text-right">฿{t.laborCost.toLocaleString()}</td>
-                        <td className="py-3 px-3 text-right">฿{t.partsCost.toLocaleString()}</td>
-                        <td className="py-3 px-3 text-right font-bold text-slate-900 dark:text-white">
-                          ฿{t.totalAmount.toLocaleString()}
+                        <td className="py-3 px-3 text-right">฿{(t.laborCost || 0).toLocaleString()}</td>
+                        <td className="py-3 px-3 text-right">฿{(t.partsCost || 0).toLocaleString()}</td>
+                        <td className="py-3 px-3 text-right">
+                          {(Number(t.discount) || 0) > 0 ? (
+                            <span className="font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/60 px-1.5 py-0.5 rounded border border-rose-200 dark:border-rose-900">
+                              -฿{(Number(t.discount) || 0).toLocaleString()}
+                            </span>
+                          ) : (
+                            <span className="text-slate-300 dark:text-slate-600">-</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-3 text-right font-extrabold text-blue-900 dark:text-white">
+                          ฿{(t.totalAmount || 0).toLocaleString()}
                         </td>
                         <td className="py-3 px-3 text-center">
                           <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 dark:bg-slate-700">

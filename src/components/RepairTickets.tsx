@@ -32,6 +32,7 @@ interface RepairTicketsProps {
   onEditTicket: (ticket: RepairTicket) => void;
   onDeleteTicket: (ticketId: string) => void;
   onUpdateStatus: (ticketId: string, status: RepairStatus) => void;
+  onUpdateDiscount?: (ticketId: string, newDiscount: number) => void;
   onPrintTicket: (ticket: RepairTicket) => void;
   onLineNotify: (ticket: RepairTicket) => void;
   onOpenTracking: (ticket: RepairTicket) => void;
@@ -43,6 +44,7 @@ export const RepairTickets: React.FC<RepairTicketsProps> = ({
   onEditTicket,
   onDeleteTicket,
   onUpdateStatus,
+  onUpdateDiscount,
   onPrintTicket,
   onLineNotify,
   onOpenTracking
@@ -51,6 +53,11 @@ export const RepairTickets: React.FC<RepairTicketsProps> = ({
   const [selectedDevice, setSelectedDevice] = useState<'all' | DeviceType>('all');
   const [selectedStatus, setSelectedStatus] = useState<'all' | RepairStatus>('all');
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
+  
+  // Quick discount modal state
+  const [discountModalTicket, setDiscountModalTicket] = useState<RepairTicket | null>(null);
+  const [quickDiscountAmount, setQuickDiscountAmount] = useState<string>('0');
+  const [quickDiscountMode, setQuickDiscountMode] = useState<'baht' | 'percent'>('baht');
 
   // Filtered tickets
   const filteredTickets = useMemo(() => {
@@ -347,24 +354,54 @@ export const RepairTickets: React.FC<RepairTicketsProps> = ({
                     )}
                   </div>
 
-                  {/* Financial Total */}
+                  {/* Financial Total & Discount Display */}
                   <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-700 flex items-center justify-between text-xs">
                     <div>
-                      <span className="text-slate-500">ค่าแรง+อะไหล่: </span>
-                      <span className="font-bold text-slate-900 dark:text-white text-sm">
-                        ฿{ticket.totalAmount.toLocaleString()}
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-slate-500 text-xs">ยอดสุทธิ:</span>
+                        <span className="font-extrabold text-blue-700 dark:text-blue-400 text-base">
+                          ฿{ticket.totalAmount.toLocaleString()}
+                        </span>
+                      </div>
+                      {ticket.discount > 0 ? (
+                        <div className="flex items-center gap-1.5 text-[11px] mt-0.5">
+                          <span className="text-slate-400 line-through">
+                            ฿{((ticket.laborCost || 0) + (ticket.partsCost || 0)).toLocaleString()}
+                          </span>
+                          <span className="font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/60 px-1.5 py-0.5 rounded border border-rose-200 dark:border-rose-900">
+                            ลด -฿{ticket.discount.toLocaleString()}
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="text-[10px] text-slate-400">
+                          (ค่าแรง ฿{(ticket.laborCost || 0).toLocaleString()} + อะไหล่ ฿{(ticket.partsCost || 0).toLocaleString()})
+                        </div>
+                      )}
                     </div>
 
-                    <span
-                      className={`text-[11px] px-2 py-0.5 rounded font-medium ${
-                        ticket.isPaid
-                          ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300'
-                          : 'bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300'
-                      }`}
-                    >
-                      {ticket.isPaid ? 'ชำระเงินแล้ว' : 'ยังไม่ชำระ'}
-                    </span>
+                    <div className="text-right flex flex-col items-end gap-1">
+                      <span
+                        className={`text-[11px] px-2 py-0.5 rounded font-medium ${
+                          ticket.isPaid
+                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300'
+                            : 'bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300'
+                        }`}
+                      >
+                        {ticket.isPaid ? 'ชำระเงินแล้ว' : 'ยังไม่ชำระ'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDiscountModalTicket(ticket);
+                          setQuickDiscountAmount(String(ticket.discount || 0));
+                          setQuickDiscountMode('baht');
+                        }}
+                        className="text-[11px] font-semibold text-rose-600 dark:text-rose-400 hover:underline flex items-center gap-0.5"
+                      >
+                        <Tag className="w-3 h-3" />
+                        <span>{ticket.discount > 0 ? 'แก้ไขส่วนลด' : '+ ใส่ส่วนลด'}</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -444,6 +481,221 @@ export const RepairTickets: React.FC<RepairTicketsProps> = ({
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Quick Discount Modal */}
+      {discountModalTicket && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-700 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-rose-100 dark:bg-rose-950 text-rose-600 dark:text-rose-400 flex items-center justify-center font-bold">
+                  %
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 dark:text-white text-sm">
+                    ปรับส่วนลดพิเศษ (Quick Discount)
+                  </h3>
+                  <p className="text-[11px] text-slate-500 font-mono">
+                    {discountModalTicket.ticketNumber} • คุณ{discountModalTicket.customerName}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setDiscountModalTicket(null)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-lg leading-none p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Calculations Breakdown */}
+            {(() => {
+              const subtotal = (discountModalTicket.laborCost || 0) + (discountModalTicket.partsCost || 0);
+              let disc = 0;
+              if (quickDiscountMode === 'baht') {
+                disc = Math.max(0, parseFloat(quickDiscountAmount) || 0);
+              } else {
+                const pct = Math.max(0, Math.min(100, parseFloat(quickDiscountAmount) || 0));
+                disc = Math.round((subtotal * pct) / 100);
+              }
+              const effectiveDisc = Math.min(disc, subtotal);
+              const newTotal = Math.max(0, subtotal - effectiveDisc);
+
+              return (
+                <div className="space-y-4 text-xs">
+                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900 space-y-1.5 border border-slate-200 dark:border-slate-700">
+                    <div className="flex justify-between text-slate-600 dark:text-slate-400">
+                      <span>ค่าแรงตรวจเช็ค/บริการ:</span>
+                      <span>฿{(discountModalTicket.laborCost || 0).toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between text-slate-600 dark:text-slate-400">
+                      <span>ค่าอะไหล่รวม ({discountModalTicket.partsUsed?.length || 0} รายการ):</span>
+                      <span>฿{(discountModalTicket.partsCost || 0).toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between font-semibold text-slate-800 dark:text-slate-200 pt-1 border-t border-slate-200 dark:border-slate-800">
+                      <span>รวมก่อนหักส่วนลด:</span>
+                      <span>฿{subtotal.toLocaleString()}</span>
+                    </div>
+                  </div>
+
+                  {/* Discount input & toggle */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="font-bold text-slate-700 dark:text-slate-300">
+                        ระบุจำนวนส่วนลด:
+                      </label>
+                      <div className="flex rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 text-xs font-bold">
+                        <button
+                          type="button"
+                          onClick={() => setQuickDiscountMode('baht')}
+                          className={`px-3 py-1 transition-colors ${
+                            quickDiscountMode === 'baht'
+                              ? 'bg-rose-600 text-white'
+                              : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100'
+                          }`}
+                        >
+                          ฿ บาท
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setQuickDiscountMode('percent')}
+                          className={`px-3 py-1 transition-colors ${
+                            quickDiscountMode === 'percent'
+                              ? 'bg-rose-600 text-white'
+                              : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100'
+                          }`}
+                        >
+                          % เปอร์เซ็นต์
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="relative">
+                      <input
+                        type="number"
+                        min="0"
+                        max={quickDiscountMode === 'percent' ? 100 : subtotal}
+                        placeholder="0"
+                        value={quickDiscountAmount}
+                        onChange={e => setQuickDiscountAmount(e.target.value)}
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 font-extrabold text-base text-rose-600 dark:text-rose-400 focus:ring-2 focus:ring-rose-500"
+                        autoFocus
+                      />
+                      <span className="absolute right-3.5 top-2.5 font-bold text-slate-400 text-sm">
+                        {quickDiscountMode === 'baht' ? '฿' : '%'}
+                      </span>
+                    </div>
+
+                    {/* Presets */}
+                    <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setQuickDiscountMode('baht');
+                          setQuickDiscountAmount('0');
+                        }}
+                        className="px-2 py-1 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 text-[11px]"
+                      >
+                        ล้างส่วนลด (฿0)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setQuickDiscountMode('baht');
+                          setQuickDiscountAmount('50');
+                        }}
+                        className="px-2 py-1 rounded bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 hover:bg-rose-100 border border-rose-200 dark:border-rose-900 text-[11px] font-bold"
+                      >
+                        -฿50
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setQuickDiscountMode('baht');
+                          setQuickDiscountAmount('100');
+                        }}
+                        className="px-2 py-1 rounded bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 hover:bg-rose-100 border border-rose-200 dark:border-rose-900 text-[11px] font-bold"
+                      >
+                        -฿100
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setQuickDiscountMode('baht');
+                          setQuickDiscountAmount('200');
+                        }}
+                        className="px-2 py-1 rounded bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 hover:bg-rose-100 border border-rose-200 dark:border-rose-900 text-[11px] font-bold"
+                      >
+                        -฿200
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setQuickDiscountMode('percent');
+                          setQuickDiscountAmount('10');
+                        }}
+                        className="px-2 py-1 rounded bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 hover:bg-purple-100 border border-purple-200 dark:border-purple-900 text-[11px] font-bold"
+                      >
+                        -10%
+                      </button>
+                      {discountModalTicket.laborCost > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setQuickDiscountMode('baht');
+                            setQuickDiscountAmount(String(discountModalTicket.laborCost));
+                          }}
+                          className="px-2 py-1 rounded bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 hover:bg-amber-100 border border-amber-200 dark:border-amber-900 text-[11px] font-bold"
+                        >
+                          ฟรีค่าแรง (-฿{discountModalTicket.laborCost})
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Net preview box */}
+                  <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/40 dark:to-indigo-950/40 p-3.5 rounded-xl border border-blue-200 dark:border-blue-900 flex items-center justify-between">
+                    <div>
+                      <span className="text-[11px] text-slate-500 dark:text-slate-400 block">
+                        ยอดที่ต้องชำระหลังหักส่วนลด:
+                      </span>
+                      <span className="text-xs font-semibold text-rose-600 dark:text-rose-400">
+                        ส่วนลด -฿{effectiveDisc.toLocaleString()}
+                      </span>
+                    </div>
+                    <span className="text-2xl font-black text-blue-900 dark:text-white">
+                      ฿{newTotal.toLocaleString()}
+                    </span>
+                  </div>
+
+                  {/* Action buttons */}
+                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-700">
+                    <button
+                      type="button"
+                      onClick={() => setDiscountModalTicket(null)}
+                      className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 text-slate-700 dark:text-slate-200 font-semibold text-xs"
+                    >
+                      ยกเลิก
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (onUpdateDiscount) {
+                          onUpdateDiscount(discountModalTicket.id, effectiveDisc);
+                        }
+                        setDiscountModalTicket(null);
+                      }}
+                      className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-md shadow-rose-600/30 transition-all cursor-pointer"
+                    >
+                      ✓ บันทึกส่วนลดทันที
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
         </div>
       )}
     </div>

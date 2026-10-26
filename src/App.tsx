@@ -102,6 +102,18 @@ export default function App() {
     await dbService.updateTicketStatus(ticketId, status);
   };
 
+  const handleUpdateTicketDiscount = async (ticketId: string, newDiscount: number) => {
+    const ticket = tickets.find(t => t.id === ticketId);
+    if (!ticket) return;
+    const subtotal = (ticket.laborCost || 0) + (ticket.partsCost || 0);
+    const validDiscount = Math.max(0, Math.min(newDiscount, subtotal));
+    const newTotal = Math.max(0, subtotal - validDiscount);
+    await dbService.updateTicketStatus(ticketId, ticket.status, {
+      discount: validDiscount,
+      totalAmount: newTotal
+    });
+  };
+
   const handlePrintTicket = (ticket: RepairTicket) => {
     setTicketToPrint(ticket);
     setIsPrintModalOpen(true);
@@ -222,6 +234,7 @@ export default function App() {
             onEditTicket={handleOpenEditTicket}
             onDeleteTicket={handleDeleteTicket}
             onUpdateStatus={handleUpdateStatus}
+            onUpdateDiscount={handleUpdateTicketDiscount}
             onPrintTicket={handlePrintTicket}
             onLineNotify={handleLineNotify}
             onOpenTracking={handleOpenTrackingFromTicket}

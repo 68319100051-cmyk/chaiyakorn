@@ -38,6 +38,10 @@ export const LineNotificationModal: React.FC<LineNotificationModalProps> = ({
   // Generate templates
   const getMessageContent = () => {
     if (templateType === 'completed') {
+      const discountText = (Number(ticket.discount) || 0) > 0
+        ? `\nรวมค่าบริการและอะไหล่: ${((ticket.laborCost || 0) + (ticket.partsCost || 0)).toLocaleString()} บาท\n🎁 ส่วนลดพิเศษ: -${(Number(ticket.discount) || 0).toLocaleString()} บาท\n`
+        : '';
+
       return `🔔 [แจ้งเตือนเครื่องซ่อมเสร็จสิ้น - ${shopSettings.shopName}]
 เรียน คุณ${ticket.customerName}
 
@@ -47,8 +51,8 @@ export const LineNotificationModal: React.FC<LineNotificationModalProps> = ({
 
 ผลการซ่อม/อะไหล่ที่เปลี่ยน:
 ${ticket.technicianNotes || 'ซ่อมแซมและบำรุงรักษาเรียบร้อยพร้อมใช้งาน'}
-
-💰 ยอดชำระทั้งสิ้น: ${ticket.totalAmount.toLocaleString()} บาท
+${discountText}
+💰 ยอดสุทธิที่ต้องชำระ: ${ticket.totalAmount.toLocaleString()} บาท
 (${ticket.isPaid ? 'ชำระเงินเรียบร้อยแล้ว' : 'ชำระเงินเมื่อมารับเครื่อง'})
 
 📲 ตรวจสอบรายละเอียดงานซ่อมและใบเสร็จได้ที่:
