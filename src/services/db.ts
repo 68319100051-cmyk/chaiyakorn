@@ -281,6 +281,63 @@ class DatabaseService {
     ) || null;
   }
 
+  // Subscribe to real-time updates for a single ticket by ticketNumber or ID
+  subscribeSingleTicket(queryKey: string, callback: (ticket: RepairTicket | null) => void): () => void {
+    const clean = queryKey.trim().toUpperCase();
+    if (!clean) {
+      callback(null);
+      return () => {};
+    }
+
+    // Try listening to the entire collection to find the matching document dynamically
+    try {
+      return onSnapshot(
+        collection(db, 'repair_tickets'),
+        (snapshot) => {
+          let found: RepairTicket | null = null;
+          snapshot.forEach((docSnap) => {
+            const data = docSnap.data() as RepairTicket;
+            if (
+              data.ticketNumber?.toUpperCase() === clean ||
+              data.id === clean ||
+              data.trackingToken?.toUpperCase() === clean
+            ) {
+              found = data;
+            }
+          });
+
+          if (found) {
+            callback(found);
+          } else {
+            // Check fallback local
+            const local = getLocal<RepairTicket[]>(LOCAL_STORAGE_KEYS.TICKETS, INITIAL_TICKETS);
+            const localMatch = local.find(
+              t => t.ticketNumber.toUpperCase() === clean ||
+                   t.id.toUpperCase() === clean ||
+                   t.trackingToken?.toUpperCase() === clean
+            ) || null;
+            callback(localMatch);
+          }
+        },
+        (error) => {
+          console.warn('Single ticket snapshot error:', error);
+          const local = getLocal<RepairTicket[]>(LOCAL_STORAGE_KEYS.TICKETS, INITIAL_TICKETS);
+          const localMatch = local.find(
+            t => t.ticketNumber.toUpperCase() === clean || t.id.toUpperCase() === clean
+          ) || null;
+          callback(localMatch);
+        }
+      );
+    } catch {
+      const local = getLocal<RepairTicket[]>(LOCAL_STORAGE_KEYS.TICKETS, INITIAL_TICKETS);
+      const localMatch = local.find(
+        t => t.ticketNumber.toUpperCase() === clean || t.id.toUpperCase() === clean
+      ) || null;
+      callback(localMatch);
+      return () => {};
+    }
+  }
+
   // --- Inventory Operations ---
   async saveInventoryItem(item: InventoryItem): Promise<void> {
     try {

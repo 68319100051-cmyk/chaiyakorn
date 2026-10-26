@@ -8,7 +8,7 @@ import { Dashboard } from './components/Dashboard';
 import { RepairTickets } from './components/RepairTickets';
 import { InventoryManager } from './components/InventoryManager';
 import { DailyReportView } from './components/DailyReportView';
-import { CustomerTrackingView } from './components/CustomerTrackingView';
+import { CustomerPublicPortal } from './components/CustomerPublicPortal';
 import { TicketFormModal } from './components/TicketFormModal';
 import { PrintReceiptModal } from './components/PrintReceiptModal';
 import { LineNotificationModal } from './components/LineNotificationModal';
@@ -16,8 +16,10 @@ import { ShopSettingsModal } from './components/ShopSettingsModal';
 
 export default function App() {
   // Navigation State
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'tickets' | 'inventory' | 'reports' | 'tracking'>('dashboard');
-  const [initialTrackingQuery, setInitialTrackingQuery] = useState<string>('');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'tickets' | 'inventory' | 'reports'>('dashboard');
+  
+  // Dedicated Customer Portal State (True separation between Customer & Admin)
+  const [customerTicketNumber, setCustomerTicketNumber] = useState<string | null>(null);
 
   // Data States
   const [tickets, setTickets] = useState<RepairTicket[]>([]);
@@ -41,9 +43,8 @@ export default function App() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const trackParam = params.get('track');
-    if (trackParam) {
-      setInitialTrackingQuery(trackParam);
-      setActiveTab('tracking');
+    if (trackParam && trackParam.trim()) {
+      setCustomerTicketNumber(trackParam.trim());
     }
   }, []);
 
@@ -118,9 +119,20 @@ export default function App() {
     });
   };
 
+  // When admin clicks to view the Customer QR Live portal for a ticket
   const handleOpenTrackingFromTicket = (ticket: RepairTicket) => {
-    setInitialTrackingQuery(ticket.ticketNumber);
-    setActiveTab('tracking');
+    setCustomerTicketNumber(ticket.ticketNumber);
+    const newUrl = `${window.location.pathname}?track=${encodeURIComponent(ticket.ticketNumber)}`;
+    window.history.pushState({ track: ticket.ticketNumber }, '', newUrl);
+  };
+
+  // Exit customer mode back to Admin
+  const handleSwitchToAdmin = () => {
+    const confirmed = window.confirm('ต้องการเปลี่ยนกลับไปยังหน้าจัดการหลังร้าน (Admin Dashboard) หรือไม่?');
+    if (confirmed) {
+      setCustomerTicketNumber(null);
+      window.history.pushState({}, '', window.location.pathname);
+    }
   };
 
   // Inventory Operations
@@ -150,9 +162,26 @@ export default function App() {
     i => i.stockQuantity <= i.minStockAlert
   ).length;
 
+  // =========================================================================
+  // IF CUSTOMER SCANNED QR CODE (track query parameter present):
+  // RENDER PURELY THE CUSTOMER PORTAL — NO ADMIN NAVBAR, NO ADMIN BUTTONS!
+  // =========================================================================
+  if (customerTicketNumber) {
+    return (
+      <CustomerPublicPortal
+        ticketNumber={customerTicketNumber}
+        shopSettings={shopSettings}
+        onSwitchToAdmin={handleSwitchToAdmin}
+      />
+    );
+  }
+
+  // =========================================================================
+  // OTHERWISE: RENDER FULL ADMIN DASHBOARD SYSTEM
+  // =========================================================================
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 flex flex-col font-sans antialiased">
-      {/* Top Navbar */}
+      {/* Top Admin Navbar */}
       <Navbar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
@@ -161,9 +190,16 @@ export default function App() {
         activeTicketsCount={activeTicketsCount}
         lowStockCount={lowStockCount}
         shopName={shopSettings.shopName}
+        onPreviewCustomer={() => {
+          if (tickets.length > 0) {
+            handleOpenTrackingFromTicket(tickets[0]);
+          } else {
+            alert('ยังไม่มีข้อมูลงานซ่อมในระบบ กรุณาเปิดใบรับซ่อมก่อน');
+          }
+        }}
       />
 
-      {/* Main Content Area */}
+      {/* Main Admin Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {activeTab === 'dashboard' && (
           <Dashboard
@@ -208,23 +244,20 @@ export default function App() {
             onPrintTicket={handlePrintTicket}
           />
         )}
-
-        {activeTab === 'tracking' && (
-          <CustomerTrackingView
-            initialTicketNumber={initialTrackingQuery}
-            shopSettings={shopSettings}
-          />
-        )}
       </main>
 
-      {/* Footer (hidden in print) */}
+      {/* Admin Footer (hidden in print) */}
       <footer className="border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 py-4 text-center text-xs text-slate-500 print:hidden">
-        <p>
-          {shopSettings.shopName} | ระบบบริหารจัดการร้านซ่อมคอมพิวเตอร์และปริ้นเตอร์ออนไลน์
-        </p>
-        <p className="mt-0.5 text-[11px] text-slate-400">
-          Cloud Firestore Connected • รองรับการสแกน QR Code ตรวจสอบสถานะงานซ่อมเรียลไทม์
-        </p>
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-2">
+          <span>{shopSettings.shopName}</span>
+          <span className="hidden sm:inline">•</span>
+          <span>ระบบบริหารจัดการร้านซ่อมคอมพิวเตอร์และปริ้นเตอร์ (Admin Portal)</span>
+          <span className="hidden sm:inline">•</span>
+          <span className="text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
+            Cloud Firestore เชื่อมต่อแล้ว
+          </span>
+        </div>
       </footer>
 
       {/* Modals */}
