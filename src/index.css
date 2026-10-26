@@ -9,39 +9,63 @@
 
 @media print {
   @page {
-    margin: 8mm;
-    size: auto;
+    size: A5 portrait;
+    margin: 5mm;
   }
 
   body {
     background: #ffffff !important;
     color: #000000 !important;
-    font-size: 11pt;
+    font-size: 10pt;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
-  /* Hide app chrome during printing */
+  /* Hide app chrome, background dashboards, headers, footers and any non-printed UI */
   header,
   footer,
   nav,
+  main,
   button,
   .print\:hidden {
     display: none !important;
   }
 
-  /* Make modal print full screen */
-  .fixed {
+  /* Make modal container transparent and top-level */
+  .fixed,
+  .print-modal-overlay {
     position: static !important;
-    background: none !important;
+    background: transparent !important;
     padding: 0 !important;
+    margin: 0 !important;
+    display: block !important;
   }
 
-  #printable-receipt-a4,
-  #printable-receipt-slip {
+  .print-modal-card {
+    border: none !important;
+    box-shadow: none !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    background: transparent !important;
+  }
+
+  /* Force only the A5 receipt to display crisply on 1 page */
+  #printable-receipt-a5 {
+    display: block !important;
     box-shadow: none !important;
     border: none !important;
     width: 100% !important;
     max-width: 100% !important;
     margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  #printable-receipt-slip {
+    display: block !important;
+    box-shadow: none !important;
+    border: none !important;
+    width: 80mm !important;
+    margin: 0 auto !important;
     padding: 0 !important;
   }
 }

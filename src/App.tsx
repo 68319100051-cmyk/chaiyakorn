@@ -200,8 +200,8 @@ export default function App() {
         }}
       />
 
-      {/* Main Admin Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      {/* Main Admin Content Area (Hidden during printing so only the ticket prints) */}
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 print:hidden">
         {activeTab === 'dashboard' && (
           <Dashboard
             tickets={tickets}
