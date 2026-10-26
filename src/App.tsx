@@ -190,6 +190,7 @@ export default function App() {
         activeTicketsCount={activeTicketsCount}
         lowStockCount={lowStockCount}
         shopName={shopSettings.shopName}
+        logoUrl={shopSettings.logoUrl}
         onPreviewCustomer={() => {
           if (tickets.length > 0) {
             handleOpenTrackingFromTicket(tickets[0]);

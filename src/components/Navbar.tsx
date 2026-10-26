@@ -19,6 +19,7 @@ interface NavbarProps {
   activeTicketsCount: number;
   lowStockCount: number;
   shopName: string;
+  logoUrl?: string;
   onPreviewCustomer: () => void;
 }
 
@@ -30,6 +31,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   activeTicketsCount,
   lowStockCount,
   shopName,
+  logoUrl,
   onPreviewCustomer
 }) => {
   return (
@@ -38,20 +40,28 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div className="flex items-center justify-between h-16">
           {/* Brand Logo & Shop Name */}
           <div className="flex items-center gap-3 cursor-pointer" onClick={() => setActiveTab('dashboard')}>
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-600 to-blue-500 flex items-center justify-center shadow-lg shadow-blue-500/20">
-              <Wrench className="w-5 h-5 text-white" />
-            </div>
+            {logoUrl ? (
+              <img
+                src={logoUrl}
+                alt={shopName}
+                className="w-11 h-11 object-contain rounded-xl bg-white p-0.5 shadow-md shadow-blue-500/20"
+              />
+            ) : (
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-600 to-blue-500 flex items-center justify-center shadow-lg shadow-blue-500/20">
+                <Wrench className="w-5 h-5 text-white" />
+              </div>
+            )}
             <div>
               <div className="flex items-center gap-2">
-                <span className="font-bold text-lg tracking-tight bg-gradient-to-r from-white via-slate-100 to-cyan-300 bg-clip-text text-transparent">
-                  FixPro
+                <span className="font-bold text-base sm:text-lg tracking-tight bg-gradient-to-r from-white via-slate-100 to-cyan-300 bg-clip-text text-transparent">
+                  {shopName}
                 </span>
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-950 text-blue-400 border border-blue-800 font-bold tracking-wide uppercase">
                   Admin หลังร้าน
                 </span>
               </div>
-              <p className="text-xs text-slate-400 truncate max-w-[180px] sm:max-w-xs">
-                {shopName || 'ระบบจัดการร้านซ่อมคอมฯ & ปริ้นเตอร์'}
+              <p className="text-xs text-slate-400 truncate max-w-[200px] sm:max-w-xs">
+                สาขาพัทลุง • โทร 083-426-8058
               </p>
             </div>
           </div>

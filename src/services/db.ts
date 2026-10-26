@@ -49,10 +49,15 @@ class DatabaseService {
         handleFirestoreError(err, OperationType.GET, 'shop_settings/default');
       });
 
-      if (!settingsSnap || !settingsSnap.exists()) {
+      if (!settingsSnap || !settingsSnap.exists() || (settingsSnap.data() as any)?.shopName?.includes('FixPro')) {
         await setDoc(settingsRef, INITIAL_SHOP_SETTINGS).catch(err => {
           handleFirestoreError(err, OperationType.WRITE, 'shop_settings/default');
         });
+      }
+
+      const localSett = getLocal<ShopSettings | null>(LOCAL_STORAGE_KEYS.SETTINGS, null);
+      if (!localSett || localSett.shopName?.includes('FixPro')) {
+        setLocal(LOCAL_STORAGE_KEYS.SETTINGS, INITIAL_SHOP_SETTINGS);
       }
 
       // Check inventory

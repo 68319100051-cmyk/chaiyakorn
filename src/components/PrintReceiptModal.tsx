@@ -161,17 +161,33 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
             >
               {/* Header: Shop Info + Title */}
               <div className="flex justify-between items-start border-b-2 border-slate-800 pb-4">
-                <div className="max-w-md">
-                  <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
-                    {shopSettings.shopName || 'FixPro คอมพิวเตอร์ & ปริ้นเตอร์ เซอร์วิส'}
-                  </h1>
-                  <p className="text-xs text-slate-600 mt-1 leading-relaxed">
-                    {shopSettings.shopAddress}
-                  </p>
-                  <p className="text-xs text-slate-700 font-medium mt-1">
-                    โทร: <span className="font-bold">{shopSettings.shopPhone}</span> | LINE ID: <span className="font-bold">{shopSettings.shopLineId}</span>
-                    {shopSettings.taxId && <span> | เลขประจำตัวผู้เสียภาษี: {shopSettings.taxId}</span>}
-                  </p>
+                <div className="flex items-start gap-3.5 max-w-lg">
+                  {shopSettings.logoUrl && (
+                    <img
+                      src={shopSettings.logoUrl}
+                      alt={shopSettings.shopName}
+                      className="h-16 w-auto object-contain rounded border border-slate-200 p-0.5 shrink-0"
+                    />
+                  )}
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h1 className="text-xl font-black text-slate-900 tracking-tight">
+                        {shopSettings.shopName}
+                      </h1>
+                      {shopSettings.branch && (
+                        <span className="text-[10px] px-2 py-0.5 rounded bg-slate-100 font-bold text-slate-700">
+                          {shopSettings.branch}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                      {shopSettings.shopAddress}
+                    </p>
+                    <p className="text-xs text-slate-700 font-medium mt-1">
+                      โทร: <span className="font-bold">{shopSettings.shopPhone}</span> | LINE: <span className="font-bold">{shopSettings.shopLineId}</span>
+                      {shopSettings.taxId && <span> | เลขประจำตัวผู้เสียภาษี: <span className="font-mono">{shopSettings.taxId}</span></span>}
+                    </p>
+                  </div>
                 </div>
 
                 <div className="text-right">
@@ -365,6 +381,13 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
               className="bg-white text-slate-900 w-[80mm] p-4 rounded-xl shadow-lg border border-slate-200 font-mono text-xs print:shadow-none print:border-none print:w-full print:p-2"
             >
               <div className="text-center pb-2 border-b border-dashed border-slate-400">
+                {shopSettings.logoUrl && (
+                  <img
+                    src={shopSettings.logoUrl}
+                    alt={shopSettings.shopName}
+                    className="h-10 w-auto object-contain mx-auto mb-1"
+                  />
+                )}
                 <h1 className="font-bold text-sm">{shopSettings.shopName}</h1>
                 <p className="text-[10px] text-slate-600 mt-0.5">{shopSettings.shopAddress}</p>
                 <p className="text-[10px] text-slate-600">โทร {shopSettings.shopPhone} | LINE: {shopSettings.shopLineId}</p>

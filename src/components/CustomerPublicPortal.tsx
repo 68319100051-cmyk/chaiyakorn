@@ -76,15 +76,23 @@ export const CustomerPublicPortal: React.FC<CustomerPublicPortalProps> = ({
       <header className="border-b border-slate-800 bg-slate-900/90 backdrop-blur-md sticky top-0 z-30 px-4 py-3 shadow-md">
         <div className="max-w-2xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-cyan-600 to-blue-500 flex items-center justify-center shadow-md shadow-blue-500/20 text-white font-black text-base">
-              FP
-            </div>
+            {shopSettings.logoUrl ? (
+              <img
+                src={shopSettings.logoUrl}
+                alt={shopSettings.shopName}
+                className="w-10 h-10 object-contain rounded-xl bg-white p-0.5 shadow-md shadow-blue-500/20 shrink-0"
+              />
+            ) : (
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-cyan-600 to-blue-500 flex items-center justify-center shadow-md shadow-blue-500/20 text-white font-black text-base">
+                FP
+              </div>
+            )}
             <div>
               <h1 className="font-extrabold text-sm sm:text-base text-white tracking-tight">
-                {shopSettings.shopName || 'FixPro คอมพิวเตอร์ & ปริ้นเตอร์ เซอร์วิส'}
+                {shopSettings.shopName}
               </h1>
               <p className="text-[11px] text-slate-400">
-                ระบบตรวจสอบสถานะงานซ่อมออนไลน์
+                ระบบตรวจสอบสถานะงานซ่อมออนไลน์ • โทร {shopSettings.shopPhone}
               </p>
             </div>
           </div>

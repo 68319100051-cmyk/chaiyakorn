@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ShopSettings } from '../types';
-import { X, Settings, Store, Phone, MessageSquare, ShieldCheck, FileText, Check } from 'lucide-react';
+import { X, Settings, Store, Phone, MessageSquare, ShieldCheck, FileText, Check, CreditCard, Mail, Globe } from 'lucide-react';
 
 interface ShopSettingsModalProps {
   isOpen: boolean;
@@ -18,10 +18,17 @@ export const ShopSettingsModal: React.FC<ShopSettingsModalProps> = ({
   if (!isOpen) return null;
 
   const [shopName, setShopName] = useState(settings.shopName);
+  const [branch, setBranch] = useState(settings.branch || 'สำนักงานใหญ่');
   const [shopPhone, setShopPhone] = useState(settings.shopPhone);
   const [shopLineId, setShopLineId] = useState(settings.shopLineId);
+  const [email, setEmail] = useState(settings.email || 'poi1800@gmail.com');
+  const [facebook, setFacebook] = useState(settings.facebook || 'facebook.com/phatthalungprinter');
   const [shopAddress, setShopAddress] = useState(settings.shopAddress);
-  const [taxId, setTaxId] = useState(settings.taxId || '');
+  const [taxId, setTaxId] = useState(settings.taxId || '0935562018892');
+  const [promptPayId, setPromptPayId] = useState(settings.promptPayId || '0834268058');
+  const [bankName, setBankName] = useState(settings.bankName || 'ธนาคารกสิกรไทย สาขาพัทลุง');
+  const [bankAccountNumber, setBankAccountNumber] = useState(settings.bankAccountNumber || '083-4-26805-8');
+  const [bankAccountName, setBankAccountName] = useState(settings.bankAccountName || 'พัทลุงปริ้นเตอร์ คอมพิวเตอร์');
   const [receiptFooterMessage, setReceiptFooterMessage] = useState(settings.receiptFooterMessage);
   const [warrantyTerms, setWarrantyTerms] = useState(settings.warrantyTerms);
   const [lineNotifyToken, setLineNotifyToken] = useState(settings.lineNotifyToken || '');
@@ -33,10 +40,17 @@ export const ShopSettingsModal: React.FC<ShopSettingsModalProps> = ({
     const updated: ShopSettings = {
       ...settings,
       shopName: shopName.trim(),
+      branch: branch.trim(),
       shopPhone: shopPhone.trim(),
       shopLineId: shopLineId.trim(),
+      email: email.trim() || undefined,
+      facebook: facebook.trim() || undefined,
       shopAddress: shopAddress.trim(),
       taxId: taxId.trim() || undefined,
+      promptPayId: promptPayId.trim() || undefined,
+      bankName: bankName.trim() || undefined,
+      bankAccountNumber: bankAccountNumber.trim() || undefined,
+      bankAccountName: bankAccountName.trim() || undefined,
       receiptFooterMessage: receiptFooterMessage.trim(),
       warrantyTerms: warrantyTerms.trim(),
       lineNotifyToken: lineNotifyToken.trim() || undefined,
@@ -53,20 +67,28 @@ export const ShopSettingsModal: React.FC<ShopSettingsModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-      <div className="bg-white dark:bg-slate-800 rounded-2xl max-w-xl w-full p-5 sm:p-6 shadow-2xl border border-slate-200 dark:border-slate-700 space-y-4">
+      <div className="bg-white dark:bg-slate-800 rounded-2xl max-w-2xl w-full p-5 sm:p-6 shadow-2xl border border-slate-200 dark:border-slate-700 space-y-4 max-h-[92vh] flex flex-col">
         
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 pb-3">
-          <div className="flex items-center gap-2">
-            <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-950/80 text-blue-600 dark:text-blue-400">
-              <Store className="w-5 h-5" />
-            </div>
+        <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 pb-3 shrink-0">
+          <div className="flex items-center gap-3">
+            {settings.logoUrl ? (
+              <img
+                src={settings.logoUrl}
+                alt={shopName}
+                className="w-10 h-10 object-contain rounded-xl bg-white p-0.5 border border-slate-200"
+              />
+            ) : (
+              <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-950/80 text-blue-600 dark:text-blue-400">
+                <Store className="w-5 h-5" />
+              </div>
+            )}
             <div>
               <h3 className="font-bold text-slate-800 dark:text-white text-base">
-                ตั้งค่าข้อมูลร้าน & เงื่อนไขออกบิล
+                ข้อมูลร้าน & บัญชีรับเงิน (พัทลุงปริ้นเตอร์ คอมพิวเตอร์)
               </h3>
               <p className="text-xs text-slate-500">
-                ข้อมูลที่จะแสดงบนหัวใบรับซ่อม ใบเสร็จ และข้อความแจ้งเตือนลูกค้า
+                ข้อมูลจะแสดงบนหัวบิล สลิปใบรับซ่อม และลิงก์ตรวจสถานะของลูกค้า
               </p>
             </div>
           </div>
@@ -78,104 +100,205 @@ export const ShopSettingsModal: React.FC<ShopSettingsModalProps> = ({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4 text-xs">
-          <div>
-            <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-              ชื่อร้าน (Shop Name) <span className="text-rose-500">*</span>
-            </label>
-            <input
-              type="text"
-              required
-              value={shopName}
-              onChange={e => setShopName(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 font-bold text-sm text-slate-800 dark:text-white"
-            />
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto space-y-4 text-xs pr-1">
+          {/* 1. General Profile */}
+          <div className="space-y-3">
+            <h4 className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 border-b border-slate-100 dark:border-slate-700 pb-1.5">
+              <Store className="w-4 h-4 text-blue-500" />
+              <span>ข้อมูลสถานประกอบการ</span>
+            </h4>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="sm:col-span-2">
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  ชื่อร้าน (Store Name) <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={shopName}
+                  onChange={e => setShopName(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 font-bold text-slate-800 dark:text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  สาขา (Branch)
+                </label>
+                <input
+                  type="text"
+                  value={branch}
+                  onChange={e => setBranch(e.target.value)}
+                  placeholder="สำนักงานใหญ่"
+                  className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  เบอร์โทรติดต่อร้าน <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={shopPhone}
+                  onChange={e => setShopPhone(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 font-bold"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  LINE ID
+                </label>
+                <input
+                  type="text"
+                  value={shopLineId}
+                  onChange={e => setShopLineId(e.target.value)}
+                  placeholder="poi1800"
+                  className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 font-semibold text-emerald-600"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  เลขประจำตัวผู้เสียภาษี
+                </label>
+                <input
+                  type="text"
+                  value={taxId}
+                  onChange={e => setTaxId(e.target.value)}
+                  placeholder="0935562018892"
+                  className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 font-mono"
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  อีเมล (Email)
+                </label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  placeholder="poi1800@gmail.com"
+                  className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Facebook Page
+                </label>
+                <input
+                  type="text"
+                  value={facebook}
+                  onChange={e => setFacebook(e.target.value)}
+                  placeholder="facebook.com/phatthalungprinter"
+                  className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700"
+                />
+              </div>
+
+              <div className="sm:col-span-3">
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  ที่อยู่ร้านค้า (แสดงบนหัวบิลและสลิป)
+                </label>
+                <input
+                  type="text"
+                  value={shopAddress}
+                  onChange={e => setShopAddress(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700"
+                />
+              </div>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* 2. Bank & PromptPay Accounts */}
+          <div className="space-y-3 pt-2">
+            <h4 className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 border-b border-slate-100 dark:border-slate-700 pb-1.5">
+              <CreditCard className="w-4 h-4 text-emerald-500" />
+              <span>ข้อมูลการชำระเงิน (พร้อมเพย์ / บัญชีธนาคาร)</span>
+            </h4>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  เบอร์พร้อมเพย์ (PromptPay ID)
+                </label>
+                <input
+                  type="text"
+                  value={promptPayId}
+                  onChange={e => setPromptPayId(e.target.value)}
+                  placeholder="0834268058"
+                  className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 font-mono font-bold text-blue-600"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  ธนาคาร & สาขา
+                </label>
+                <input
+                  type="text"
+                  value={bankName}
+                  onChange={e => setBankName(e.target.value)}
+                  placeholder="ธนาคารกสิกรไทย สาขาพัทลุง"
+                  className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  เลขที่บัญชีธนาคาร
+                </label>
+                <input
+                  type="text"
+                  value={bankAccountNumber}
+                  onChange={e => setBankAccountNumber(e.target.value)}
+                  placeholder="083-4-26805-8"
+                  className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 font-mono font-bold"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* 3. Warranty & Footer */}
+          <div className="space-y-3 pt-2">
+            <h4 className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 border-b border-slate-100 dark:border-slate-700 pb-1.5">
+              <ShieldCheck className="w-4 h-4 text-purple-500" />
+              <span>เงื่อนไขการรับประกันและข้อความท้ายบิล</span>
+            </h4>
+
             <div>
               <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                เบอร์โทรติดต่อร้าน <span className="text-rose-500">*</span>
+                เงื่อนไขการรับประกันงานซ่อม (Warranty Terms)
               </label>
-              <input
-                type="text"
-                required
-                value={shopPhone}
-                onChange={e => setShopPhone(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 font-semibold"
+              <textarea
+                rows={3}
+                value={warrantyTerms}
+                onChange={e => setWarrantyTerms(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 leading-relaxed font-sans"
               />
             </div>
 
             <div>
               <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                LINE Official Account / ID
+                ข้อความท้ายใบเสร็จ (Receipt Footer)
               </label>
               <input
                 type="text"
-                value={shopLineId}
-                onChange={e => setShopLineId(e.target.value)}
-                placeholder="@fixpro_service"
-                className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 font-semibold text-emerald-600"
+                value={receiptFooterMessage}
+                onChange={e => setReceiptFooterMessage(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700"
               />
             </div>
-          </div>
-
-          <div>
-            <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-              ที่อยู่ร้าน (แสดงบนหัวบิลและแผนที่)
-            </label>
-            <textarea
-              rows={2}
-              value={shopAddress}
-              onChange={e => setShopAddress(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 leading-relaxed"
-            />
-          </div>
-
-          <div>
-            <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-              เลขประจำตัวผู้เสียภาษี (ถ้ามี)
-            </label>
-            <input
-              type="text"
-              value={taxId}
-              onChange={e => setTaxId(e.target.value)}
-              placeholder="0-1055-XXXXX-XX-X"
-              className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 font-mono"
-            />
-          </div>
-
-          <div>
-            <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-              เงื่อนไขการรับประกันงานซ่อม (Warranty Terms)
-            </label>
-            <textarea
-              rows={2}
-              value={warrantyTerms}
-              onChange={e => setWarrantyTerms(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700"
-            />
-          </div>
-
-          <div>
-            <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-              ข้อความท้ายใบเสร็จ (Receipt Footer)
-            </label>
-            <input
-              type="text"
-              value={receiptFooterMessage}
-              onChange={e => setReceiptFooterMessage(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700"
-            />
           </div>
 
           <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-700 space-y-2">
             <span className="font-bold text-slate-800 dark:text-slate-200 block">
-              การเชื่อมต่อ LINE Notify Token (ไม่บังคับ)
+              LINE Notify Token (ไม่บังคับ)
             </span>
-            <p className="text-[11px] text-slate-500">
-              หากต้องการส่งแจ้งเตือนเข้ากลุ่มไลน์ช่างอัตโนมัติเมื่อมีเครื่องเข้าซ่อมหรือซ่อมเสร็จ
-            </p>
             <input
               type="password"
               placeholder="ใส่ LINE Notify Token จาก notify-bot.line.me"
@@ -185,7 +308,7 @@ export const ShopSettingsModal: React.FC<ShopSettingsModalProps> = ({
             />
           </div>
 
-          <div className="pt-3 border-t border-slate-100 dark:border-slate-700 flex items-center justify-end gap-2">
+          <div className="pt-3 border-t border-slate-100 dark:border-slate-700 flex items-center justify-end gap-2 shrink-0">
             <button
               type="button"
               onClick={onClose}
@@ -195,7 +318,7 @@ export const ShopSettingsModal: React.FC<ShopSettingsModalProps> = ({
             </button>
             <button
               type="submit"
-              className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold flex items-center gap-1.5"
+              className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold flex items-center gap-1.5 shadow-md shadow-blue-500/20 active:scale-95"
             >
               {savedSuccess ? (
                 <>
@@ -203,7 +326,7 @@ export const ShopSettingsModal: React.FC<ShopSettingsModalProps> = ({
                   <span>บันทึกสำเร็จ</span>
                 </>
               ) : (
-                <span>บันทึกการตั้งค่า</span>
+                <span>บันทึกข้อมูลร้านค้า</span>
               )}
             </button>
           </div>

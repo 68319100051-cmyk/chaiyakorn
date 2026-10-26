@@ -84,10 +84,18 @@ export interface InventoryItem {
 export interface ShopSettings {
   id: string;
   shopName: string;
+  branch?: string;
   shopPhone: string;
   shopLineId: string;
   shopAddress: string;
   taxId?: string;
+  email?: string;
+  facebook?: string;
+  promptPayId?: string;
+  bankName?: string;
+  bankAccountNumber?: string;
+  bankAccountName?: string;
+  logoUrl?: string;
   receiptFooterMessage: string;
   warrantyTerms: string;
   lineNotifyToken?: string;
