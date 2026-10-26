@@ -13,7 +13,8 @@ import {
   AlertCircle,
   Sparkles,
   Lock,
-  ArrowRight
+  ArrowRight,
+  User
 } from 'lucide-react';
 
 interface CustomerPublicPortalProps {
@@ -150,6 +151,34 @@ export const CustomerPublicPortal: React.FC<CustomerPublicPortalProps> = ({
               </div>
             )}
 
+            {/* Customer Information Card */}
+            <div className="bg-gradient-to-r from-slate-800 via-slate-800 to-blue-950/60 rounded-2xl p-4 sm:p-5 border border-blue-500/30 shadow-lg flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3.5">
+                <div className="w-11 h-11 rounded-xl bg-gradient-to-tr from-blue-600 to-cyan-500 text-white flex items-center justify-center shrink-0 shadow-md shadow-blue-500/25">
+                  <User className="w-5 h-5" />
+                </div>
+                <div>
+                  <span className="text-[11px] font-semibold text-blue-300 uppercase tracking-wider block">
+                    เจ้าของอุปกรณ์ / ผู้ส่งซ่อม
+                  </span>
+                  <h2 className="text-base sm:text-lg font-black text-white mt-0.5 flex items-center gap-2">
+                    <span>คุณ{ticket.customerName}</span>
+                  </h2>
+                  {ticket.customerPhone && (
+                    <span className="text-[11px] text-slate-400 block mt-0.5">
+                      เบอร์โทรติดต่อ: {ticket.customerPhone}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="text-right shrink-0">
+                <span className="text-[10px] text-slate-400 block">เลขที่ใบรับซ่อม</span>
+                <span className="font-mono text-xs sm:text-sm font-bold px-2.5 py-1 rounded-lg bg-blue-500/20 text-blue-300 border border-blue-500/40 inline-block mt-0.5">
+                  {ticket.ticketNumber}
+                </span>
+              </div>
+            </div>
+
             {/* Ready for Pickup Celebration Banner */}
             {isReadyForPickup && (
               <div className="bg-gradient-to-r from-emerald-600 to-teal-600 rounded-2xl p-5 text-white shadow-xl shadow-emerald-500/20 space-y-3 border border-emerald-400/40 animate-in fade-in zoom-in-95 duration-300">
@@ -162,7 +191,7 @@ export const CustomerPublicPortal: React.FC<CustomerPublicPortalProps> = ({
                       ซ่อมเสร็จเรียบร้อยแล้ว
                     </span>
                     <h2 className="text-lg sm:text-xl font-extrabold mt-1">
-                      เครื่องของท่านพร้อมส่งมอบแล้วครับ!
+                      คุณ{ticket.customerName} เครื่องของท่านพร้อมส่งมอบแล้วครับ!
                     </h2>
                     <p className="text-xs text-emerald-100 mt-0.5 leading-relaxed">
                       ช่างได้ดำเนินการซ่อมและทดสอบระบบผ่านเรียบร้อย ท่านสามารถนำใบรับซ่อมหรือแสดงหน้านี้เพื่อรับเครื่องได้ทันที
@@ -183,14 +212,20 @@ export const CustomerPublicPortal: React.FC<CustomerPublicPortalProps> = ({
             <div className="bg-slate-800/90 rounded-2xl p-5 sm:p-6 border border-slate-700/80 shadow-lg space-y-6">
               {/* Ticket header */}
               <div className="flex items-start justify-between gap-3 border-b border-slate-700/80 pb-4">
-                <div>
-                  <span className="font-mono text-xs font-bold px-2.5 py-0.5 rounded-md bg-blue-500/20 text-blue-300 border border-blue-500/30">
-                    {ticket.ticketNumber}
-                  </span>
-                  <h2 className="text-lg sm:text-xl font-extrabold text-white mt-1.5">
+                <div className="space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono text-xs font-bold px-2.5 py-0.5 rounded-md bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                      {ticket.ticketNumber}
+                    </span>
+                    <span className="text-xs text-slate-200 flex items-center gap-1 font-semibold bg-slate-700/70 border border-slate-600/60 px-2 py-0.5 rounded-md">
+                      <User className="w-3 h-3 text-cyan-400" />
+                      คุณ{ticket.customerName}
+                    </span>
+                  </div>
+                  <h2 className="text-lg sm:text-xl font-extrabold text-white mt-1">
                     {ticket.brand} {ticket.model}
                   </h2>
-                  <p className="text-xs text-slate-400 mt-0.5">
+                  <p className="text-xs text-slate-400">
                     ประเภท: <span className="text-slate-200 font-medium">{DEVICE_LABELS[ticket.deviceType]?.label || ticket.deviceType}</span>
                     {ticket.serialNumber && <span> • S/N: <span className="font-mono">{ticket.serialNumber}</span></span>}
                   </p>
