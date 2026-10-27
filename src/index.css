@@ -68,4 +68,11 @@
     margin: 0 auto !important;
     padding: 0 !important;
   }
+
+  #pos-receipt-print-area {
+    display: block !important;
+    box-shadow: none !important;
+    border: none !important;
+    margin: 0 auto !important;
+  }
 }

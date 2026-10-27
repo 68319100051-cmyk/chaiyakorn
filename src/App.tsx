@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { RepairTicket, InventoryItem, ShopSettings, RepairStatus, UsedPart } from './types';
+import { RepairTicket, InventoryItem, ShopSettings, RepairStatus, UsedPart, POSSaleRecord } from './types';
 import { dbService } from './services/db';
 import { testConnection } from './firebase/config';
 import { INITIAL_SHOP_SETTINGS } from './utils/mockSeedData';
@@ -7,6 +7,8 @@ import { Navbar } from './components/Navbar';
 import { Dashboard } from './components/Dashboard';
 import { RepairTickets } from './components/RepairTickets';
 import { InventoryManager } from './components/InventoryManager';
+import { POSView } from './components/POSView';
+import { POSReceiptModal } from './components/POSReceiptModal';
 import { DailyReportView } from './components/DailyReportView';
 import { CustomerPublicPortal } from './components/CustomerPublicPortal';
 import { TicketFormModal } from './components/TicketFormModal';
@@ -16,7 +18,7 @@ import { ShopSettingsModal } from './components/ShopSettingsModal';
 
 export default function App() {
   // Navigation State
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'tickets' | 'inventory' | 'reports'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'tickets' | 'inventory' | 'pos' | 'reports'>('dashboard');
   
   // Dedicated Customer Portal State (True separation between Customer & Admin)
   const [customerTicketNumber, setCustomerTicketNumber] = useState<string | null>(null);
@@ -24,6 +26,7 @@ export default function App() {
   // Data States
   const [tickets, setTickets] = useState<RepairTicket[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [posSales, setPosSales] = useState<POSSaleRecord[]>([]);
   const [shopSettings, setShopSettings] = useState<ShopSettings>(INITIAL_SHOP_SETTINGS);
   const [isCloudConnected, setIsCloudConnected] = useState<boolean>(true);
 
@@ -33,6 +36,9 @@ export default function App() {
 
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
   const [ticketToPrint, setTicketToPrint] = useState<RepairTicket | null>(null);
+
+  const [isPOSReceiptOpen, setIsPOSReceiptOpen] = useState(false);
+  const [selectedSaleToPrint, setSelectedSaleToPrint] = useState<POSSaleRecord | null>(null);
 
   const [isLineModalOpen, setIsLineModalOpen] = useState(false);
   const [ticketToLine, setTicketToLine] = useState<RepairTicket | null>(null);
@@ -71,12 +77,28 @@ export default function App() {
       setShopSettings(settings);
     });
 
+    const unsubPOS = dbService.subscribePOSSales(sales => {
+      setPosSales(sales);
+    });
+
     return () => {
       unsubTickets();
       unsubInventory();
       unsubSettings();
+      unsubPOS();
     };
   }, []);
+
+  // POS Operations
+  const handleCompleteSale = async (sale: POSSaleRecord) => {
+    setPosSales(prev => [sale, ...prev.filter(s => s.id !== sale.id)]);
+    await dbService.savePOSSale(sale);
+  };
+
+  const handleViewPOSReceipt = (sale: POSSaleRecord) => {
+    setSelectedSaleToPrint(sale);
+    setIsPOSReceiptOpen(true);
+  };
 
   // Ticket Operations
   const handleOpenNewTicket = () => {
@@ -233,7 +255,9 @@ export default function App() {
           <Dashboard
             tickets={tickets}
             inventory={inventory}
+            posSales={posSales}
             onNewTicket={handleOpenNewTicket}
+            onOpenPOS={() => setActiveTab('pos')}
             onSelectTicket={handleOpenEditTicket}
             onPrintTicket={handlePrintTicket}
             onLineNotify={handleLineNotify}
@@ -265,12 +289,26 @@ export default function App() {
           />
         )}
 
+        {activeTab === 'pos' && (
+          <POSView
+            inventory={inventory}
+            shopSettings={shopSettings}
+            salesHistory={posSales}
+            onCompleteSale={handleCompleteSale}
+            onSaveInventoryItem={handleSaveInventoryItem}
+            onViewReceipt={handleViewPOSReceipt}
+            generateNextReceiptNumber={() => dbService.generateNextPOSReceiptNumber(posSales)}
+          />
+        )}
+
         {activeTab === 'reports' && (
           <DailyReportView
             tickets={tickets}
+            posSales={posSales}
             shopSettings={shopSettings}
             onSelectTicket={handleOpenEditTicket}
             onPrintTicket={handlePrintTicket}
+            onViewPOSReceipt={handleViewPOSReceipt}
           />
         )}
       </main>
@@ -304,6 +342,13 @@ export default function App() {
         isOpen={isPrintModalOpen}
         onClose={() => setIsPrintModalOpen(false)}
         ticket={ticketToPrint}
+        shopSettings={shopSettings}
+      />
+
+      <POSReceiptModal
+        isOpen={isPOSReceiptOpen}
+        onClose={() => setIsPOSReceiptOpen(false)}
+        sale={selectedSaleToPrint}
         shopSettings={shopSettings}
       />
 

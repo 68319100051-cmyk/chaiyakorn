@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { RepairTicket, ShopSettings, STATUS_CONFIG, DEVICE_LABELS } from '../types';
+import { RepairTicket, ShopSettings, STATUS_CONFIG, DEVICE_LABELS, POSSaleRecord } from '../types';
 import {
   Calendar,
   TrendingUp,
@@ -13,21 +13,27 @@ import {
   Filter,
   ArrowRight,
   ShieldAlert,
-  Tag
+  Tag,
+  ShoppingCart,
+  Receipt
 } from 'lucide-react';
 
 interface DailyReportViewProps {
   tickets: RepairTicket[];
+  posSales?: POSSaleRecord[];
   shopSettings: ShopSettings;
   onSelectTicket: (ticket: RepairTicket) => void;
   onPrintTicket: (ticket: RepairTicket) => void;
+  onViewPOSReceipt?: (sale: POSSaleRecord) => void;
 }
 
 export const DailyReportView: React.FC<DailyReportViewProps> = ({
   tickets,
+  posSales = [],
   shopSettings,
   onSelectTicket,
-  onPrintTicket
+  onPrintTicket,
+  onViewPOSReceipt
 }) => {
   const [selectedDate, setSelectedDate] = useState<string>(
     new Date().toISOString().split('T')[0]
@@ -49,22 +55,38 @@ export const DailyReportView: React.FC<DailyReportViewProps> = ({
     return tickets.filter(t => t.receivedDate === selectedDate || t.createdAt?.startsWith(selectedDate));
   }, [tickets, selectedDate]);
 
+  // Filter POS sales for the selected day
+  const dailyPOSSales = useMemo(() => {
+    return (posSales || []).filter(s => s.createdAt?.startsWith(selectedDate));
+  }, [posSales, selectedDate]);
+
   // Financial calculations for the selected day
   const dailyLaborRevenue = dailyCompletedTickets.reduce((sum, t) => sum + (t.laborCost || 0), 0);
   const dailyPartsRevenue = dailyCompletedTickets.reduce((sum, t) => sum + (t.partsCost || 0), 0);
   const dailyDiscounts = dailyCompletedTickets.reduce((sum, t) => sum + (Number(t.discount) || 0), 0);
-  const dailyTotalRevenue = dailyCompletedTickets
+  const dailyRepairRevenue = dailyCompletedTickets
     .filter(t => t.isPaid)
     .reduce((sum, t) => sum + (t.totalAmount || 0), 0);
 
-  // Payment method breakdown
-  const cashTotal = dailyCompletedTickets
-    .filter(t => t.paymentMethod === 'cash' && t.isPaid)
-    .reduce((sum, t) => sum + t.totalAmount, 0);
+  const dailyPOSRevenue = dailyPOSSales.reduce((sum, s) => sum + (s.totalAmount || 0), 0);
+  const dailyTotalRevenue = dailyRepairRevenue + dailyPOSRevenue;
 
-  const transferTotal = dailyCompletedTickets
-    .filter(t => t.paymentMethod === 'transfer' && t.isPaid)
-    .reduce((sum, t) => sum + t.totalAmount, 0);
+  // Payment method breakdown
+  const cashTotal =
+    dailyCompletedTickets
+      .filter(t => t.paymentMethod === 'cash' && t.isPaid)
+      .reduce((sum, t) => sum + t.totalAmount, 0) +
+    dailyPOSSales
+      .filter(s => s.paymentMethod === 'cash')
+      .reduce((sum, s) => sum + s.totalAmount, 0);
+
+  const transferTotal =
+    dailyCompletedTickets
+      .filter(t => t.paymentMethod === 'transfer' && t.isPaid)
+      .reduce((sum, t) => sum + t.totalAmount, 0) +
+    dailyPOSSales
+      .filter(s => s.paymentMethod === 'transfer')
+      .reduce((sum, s) => sum + s.totalAmount, 0);
 
   // Searchable Historical Repair Logs
   const historyFilteredTickets = useMemo(() => {
@@ -355,6 +377,84 @@ export const DailyReportView: React.FC<DailyReportViewProps> = ({
                           >
                             <PrintIcon className="w-3.5 h-3.5" />
                           </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* POS Retail Sales Table */}
+          <div className="bg-white dark:bg-slate-800 rounded-xl p-5 border border-slate-200 dark:border-slate-700 shadow-sm space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                <ShoppingCart className="w-4 h-4 text-emerald-600" />
+                <span>บิลขายหน้าร้าน (POS) ประจำวันที่ {selectedDate} ({dailyPOSSales.length} รายการ)</span>
+              </h3>
+              <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-1 rounded-lg border border-emerald-200 dark:border-emerald-800">
+                รวมยอดขายหน้าร้าน: ฿{dailyPOSRevenue.toLocaleString()}
+              </span>
+            </div>
+
+            {dailyPOSSales.length === 0 ? (
+              <div className="py-8 text-center text-slate-400 text-xs">
+                ไม่มีรายการขายหน้าร้าน (POS) ในวันที่เลือก
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 font-semibold border-b border-slate-200 dark:border-slate-700">
+                    <tr>
+                      <th className="py-2.5 px-3">เลขที่ใบเสร็จ</th>
+                      <th className="py-2.5 px-3">เวลา</th>
+                      <th className="py-2.5 px-3">ลูกค้า</th>
+                      <th className="py-2.5 px-3">รายการสินค้า</th>
+                      <th className="py-2.5 px-3 text-right">ยอดรวม</th>
+                      <th className="py-2.5 px-3 text-right">ส่วนลด</th>
+                      <th className="py-2.5 px-3 text-right">ยอดสุทธิ</th>
+                      <th className="py-2.5 px-3 text-center">วิธีชำระ</th>
+                      <th className="py-2.5 px-3 text-center">ใบเสร็จ</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                    {dailyPOSSales.map(s => (
+                      <tr key={s.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                        <td className="py-3 px-3 font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                          {s.receiptNumber}
+                        </td>
+                        <td className="py-3 px-3 text-slate-500">
+                          {new Date(s.createdAt).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น.
+                        </td>
+                        <td className="py-3 px-3 font-semibold text-slate-800 dark:text-white">
+                          {s.customerName || 'ลูกค้าทั่วไป'}
+                        </td>
+                        <td className="py-3 px-3 text-slate-600 dark:text-slate-300 max-w-xs truncate">
+                          {s.items.map(i => `${i.name} (x${i.quantity})`).join(', ')}
+                        </td>
+                        <td className="py-3 px-3 text-right">฿{s.subtotal.toLocaleString()}</td>
+                        <td className="py-3 px-3 text-right text-rose-500 font-semibold">
+                          {s.discount > 0 ? `-฿${s.discount.toLocaleString()}` : '-'}
+                        </td>
+                        <td className="py-3 px-3 text-right font-extrabold text-emerald-700 dark:text-emerald-400">
+                          ฿{s.totalAmount.toLocaleString()}
+                        </td>
+                        <td className="py-3 px-3 text-center">
+                          <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 dark:bg-slate-700">
+                            {s.paymentMethod === 'transfer' ? 'โอนเงิน' : s.paymentMethod === 'credit' ? 'บัตรเครดิต' : 'เงินสด'}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-center">
+                          {onViewPOSReceipt && (
+                            <button
+                              onClick={() => onViewPOSReceipt(s)}
+                              className="p-1 rounded text-slate-500 hover:text-slate-800"
+                              title="พิมพ์ใบเสร็จ"
+                            >
+                              <PrintIcon className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))}

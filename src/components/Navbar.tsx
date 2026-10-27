@@ -8,12 +8,13 @@ import {
   Plus,
   Settings,
   Smartphone,
-  Eye
+  Eye,
+  ShoppingCart
 } from 'lucide-react';
 
 interface NavbarProps {
-  activeTab: 'dashboard' | 'tickets' | 'inventory' | 'reports';
-  setActiveTab: (tab: 'dashboard' | 'tickets' | 'inventory' | 'reports') => void;
+  activeTab: 'dashboard' | 'tickets' | 'inventory' | 'pos' | 'reports';
+  setActiveTab: (tab: 'dashboard' | 'tickets' | 'inventory' | 'pos' | 'reports') => void;
   onNewTicket: () => void;
   onOpenSettings: () => void;
   activeTicketsCount: number;
@@ -115,6 +116,18 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
 
             <button
+              onClick={() => setActiveTab('pos')}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                activeTab === 'pos'
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              <ShoppingCart className="w-4 h-4 text-emerald-400" />
+              ขายหน้าร้าน (POS)
+            </button>
+
+            <button
               onClick={() => setActiveTab('reports')}
               className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
                 activeTab === 'reports'
@@ -192,6 +205,15 @@ export const Navbar: React.FC<NavbarProps> = ({
             {lowStockCount > 0 && (
               <span className="absolute top-0 right-1 w-2 h-2 rounded-full bg-rose-500"></span>
             )}
+          </button>
+          <button
+            onClick={() => setActiveTab('pos')}
+            className={`flex flex-col items-center gap-1 py-1 px-2 rounded ${
+              activeTab === 'pos' ? 'text-emerald-400 font-bold' : 'text-slate-400'
+            }`}
+          >
+            <ShoppingCart className="w-4 h-4" />
+            <span>ขาย (POS)</span>
           </button>
           <button
             onClick={() => setActiveTab('reports')}

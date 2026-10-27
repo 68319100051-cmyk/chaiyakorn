@@ -3,7 +3,8 @@ import {
   RepairTicket,
   InventoryItem,
   STATUS_CONFIG,
-  DEVICE_LABELS
+  DEVICE_LABELS,
+  POSSaleRecord
 } from '../types';
 import {
   Wrench,
@@ -18,13 +19,16 @@ import {
   Plus,
   ArrowRight,
   MessageSquare,
-  Printer as PrintIcon
+  Printer as PrintIcon,
+  ShoppingCart
 } from 'lucide-react';
 
 interface DashboardProps {
   tickets: RepairTicket[];
   inventory: InventoryItem[];
+  posSales?: POSSaleRecord[];
   onNewTicket: () => void;
+  onOpenPOS?: () => void;
   onSelectTicket: (ticket: RepairTicket) => void;
   onPrintTicket: (ticket: RepairTicket) => void;
   onLineNotify: (ticket: RepairTicket) => void;
@@ -35,7 +39,9 @@ interface DashboardProps {
 export const Dashboard: React.FC<DashboardProps> = ({
   tickets,
   inventory,
+  posSales = [],
   onNewTicket,
+  onOpenPOS,
   onSelectTicket,
   onPrintTicket,
   onLineNotify,
@@ -57,10 +63,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
     t => t.status !== 'completed' && t.status !== 'cancelled'
   ).length;
 
-  // Today's revenue calculation (from completed tickets today or paid today)
-  const todayRevenue = tickets
+  // Today's repair revenue calculation
+  const todayRepairRevenue = tickets
     .filter(t => t.isPaid && (t.deliveredDate === todayStr || t.updatedAt?.startsWith(todayStr)))
     .reduce((sum, t) => sum + (t.totalAmount || 0), 0);
+
+  // Today's POS sales revenue
+  const todayPOSRevenue = (posSales || [])
+    .filter(s => s.createdAt?.startsWith(todayStr))
+    .reduce((sum, s) => sum + (s.totalAmount || 0), 0);
+
+  const todayRevenue = todayRepairRevenue + todayPOSRevenue;
 
   // Low stock inventory items
   const lowStockItems = inventory.filter(i => i.stockQuantity <= i.minStockAlert);
@@ -101,6 +114,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
+            {onOpenPOS && (
+              <button
+                onClick={onOpenPOS}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-bold text-sm shadow-lg shadow-emerald-500/30 hover:from-emerald-600 hover:to-teal-600 transition-all active:scale-95 cursor-pointer"
+              >
+                <ShoppingCart className="w-4 h-4" />
+                <span>ขายหน้าร้าน (POS)</span>
+              </button>
+            )}
             <button
               onClick={onNewTicket}
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-500 to-cyan-500 text-white font-semibold text-sm shadow-lg shadow-blue-500/30 hover:from-blue-600 hover:to-cyan-600 transition-all active:scale-95 cursor-pointer"

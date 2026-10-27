@@ -81,6 +81,38 @@ export interface InventoryItem {
   updatedAt: string;
 }
 
+export interface POSCartItem {
+  id: string;
+  inventoryItemId?: string;
+  itemCode: string;
+  name: string;
+  category: InventoryCategory;
+  price: number;
+  costPrice: number;
+  quantity: number;
+  unit: string;
+  total: number;
+  isCustomItem?: boolean;
+}
+
+export interface POSSaleRecord {
+  id: string;
+  receiptNumber: string;
+  items: POSCartItem[];
+  subtotal: number;
+  discount: number;
+  discountMode?: 'baht' | 'percent';
+  totalAmount: number;
+  paymentMethod: 'cash' | 'transfer' | 'credit';
+  amountReceived: number;
+  change: number;
+  customerName?: string;
+  customerPhone?: string;
+  cashierName?: string;
+  notes?: string;
+  createdAt: string;
+}
+
 export interface ShopSettings {
   id: string;
   shopName: string;

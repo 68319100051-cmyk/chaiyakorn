@@ -9,13 +9,14 @@ import {
   onSnapshot
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase/config';
-import { RepairTicket, InventoryItem, ShopSettings } from '../types';
+import { RepairTicket, InventoryItem, ShopSettings, POSSaleRecord } from '../types';
 import { INITIAL_TICKETS, INITIAL_INVENTORY, INITIAL_SHOP_SETTINGS } from '../utils/mockSeedData';
 
 const LOCAL_STORAGE_KEYS = {
   TICKETS: 'fixpro_repair_tickets',
   INVENTORY: 'fixpro_inventory',
   SETTINGS: 'fixpro_shop_settings',
+  POS_SALES: 'fixpro_pos_sales',
   SEEDED: 'fixpro_data_seeded_v1'
 };
 
@@ -65,6 +66,7 @@ class DatabaseService {
   private ticketSubscribers: Set<(tickets: RepairTicket[]) => void> = new Set();
   private inventorySubscribers: Set<(items: InventoryItem[]) => void> = new Set();
   private settingsSubscribers: Set<(settings: ShopSettings) => void> = new Set();
+  private posSalesSubscribers: Set<(sales: POSSaleRecord[]) => void> = new Set();
 
   private notifyTickets(list: RepairTicket[]) {
     this.ticketSubscribers.forEach(cb => {
@@ -81,6 +83,12 @@ class DatabaseService {
   private notifySettings(data: ShopSettings) {
     this.settingsSubscribers.forEach(cb => {
       try { cb(data); } catch (e) { console.warn('Settings subscriber error:', e); }
+    });
+  }
+
+  private notifyPOSSales(list: POSSaleRecord[]) {
+    this.posSalesSubscribers.forEach(cb => {
+      try { cb(list); } catch (e) { console.warn('POS Sales subscriber error:', e); }
     });
   }
 
@@ -261,6 +269,46 @@ class DatabaseService {
 
     return () => {
       this.settingsSubscribers.delete(callback);
+      unsubFirestore();
+    };
+  }
+
+  subscribePOSSales(callback: (sales: POSSaleRecord[]) => void): () => void {
+    this.posSalesSubscribers.add(callback);
+
+    const initialLocal = getLocal<POSSaleRecord[]>(LOCAL_STORAGE_KEYS.POS_SALES, []);
+    callback(initialLocal);
+
+    let unsubFirestore = () => {};
+    try {
+      unsubFirestore = onSnapshot(
+        collection(db, 'pos_sales'),
+        (snapshot) => {
+          if (!snapshot.empty) {
+            const list: POSSaleRecord[] = [];
+            snapshot.forEach((docSnap) => {
+              list.push(docSnap.data() as POSSaleRecord);
+            });
+            list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+            setLocal(LOCAL_STORAGE_KEYS.POS_SALES, list);
+            this.notifyPOSSales(list);
+          } else {
+            const local = getLocal<POSSaleRecord[]>(LOCAL_STORAGE_KEYS.POS_SALES, []);
+            this.notifyPOSSales(local);
+          }
+        },
+        (error) => {
+          console.warn('Snapshot error on pos_sales:', error);
+          const local = getLocal<POSSaleRecord[]>(LOCAL_STORAGE_KEYS.POS_SALES, []);
+          this.notifyPOSSales(local);
+        }
+      );
+    } catch (err) {
+      console.warn('Error setting up onSnapshot for pos_sales:', err);
+    }
+
+    return () => {
+      this.posSalesSubscribers.delete(callback);
       unsubFirestore();
     };
   }
@@ -531,6 +579,74 @@ class DatabaseService {
     for (const t of todaysTickets) {
       if (t?.ticketNumber) {
         const parts = t.ticketNumber.split('-');
+        if (parts.length >= 3) {
+          const seq = parseInt(parts[2], 10);
+          if (!isNaN(seq) && seq > maxSeq) {
+            maxSeq = seq;
+          }
+        }
+      }
+    }
+    const nextSeq = String(maxSeq + 1).padStart(3, '0');
+    return `${prefix}${nextSeq}`;
+  }
+
+  // --- POS Operations ---
+  async savePOSSale(sale: POSSaleRecord): Promise<void> {
+    const cleaned = cleanFirestoreData(sale);
+
+    // 1. Deduct stock for items in cart
+    for (const item of sale.items) {
+      if (item.inventoryItemId) {
+        await this.adjustStock(item.inventoryItemId, -item.quantity);
+      }
+    }
+
+    // 2. Save sale record locally and notify
+    const local = getLocal<POSSaleRecord[]>(LOCAL_STORAGE_KEYS.POS_SALES, []);
+    const idx = local.findIndex(s => s.id === sale.id);
+    if (idx >= 0) {
+      local[idx] = cleaned;
+    } else {
+      local.unshift(cleaned);
+    }
+    setLocal(LOCAL_STORAGE_KEYS.POS_SALES, local);
+    this.notifyPOSSales(local);
+
+    // 3. Write to Firestore
+    try {
+      await setDoc(doc(db, 'pos_sales', sale.id), cleaned);
+    } catch (e) {
+      console.warn('Firestore pos_sales save failed:', e);
+    }
+  }
+
+  async deletePOSSale(saleId: string): Promise<void> {
+    const local = getLocal<POSSaleRecord[]>(LOCAL_STORAGE_KEYS.POS_SALES, []).filter(s => s.id !== saleId);
+    setLocal(LOCAL_STORAGE_KEYS.POS_SALES, local);
+    this.notifyPOSSales(local);
+
+    try {
+      await deleteDoc(doc(db, 'pos_sales', saleId));
+    } catch (e) {
+      console.warn('Firestore delete pos_sale failed:', e);
+    }
+  }
+
+  generateNextPOSReceiptNumber(existingSales: POSSaleRecord[] = []): string {
+    const today = new Date();
+    const dateStr = today.toISOString().split('T')[0].replace(/-/g, '');
+    const prefix = `POS-${dateStr}-`;
+
+    const list = Array.isArray(existingSales) && existingSales.length > 0
+      ? existingSales
+      : getLocal<POSSaleRecord[]>(LOCAL_STORAGE_KEYS.POS_SALES, []);
+
+    const todaysSales = list.filter(s => s?.receiptNumber?.startsWith(prefix));
+    let maxSeq = 0;
+    for (const s of todaysSales) {
+      if (s?.receiptNumber) {
+        const parts = s.receiptNumber.split('-');
         if (parts.length >= 3) {
           const seq = parseInt(parts[2], 10);
           if (!isNaN(seq) && seq > maxSeq) {
