@@ -42,7 +42,8 @@ export interface RepairTicket {
   discount: number;                   // ส่วนลด
   totalAmount: number;                // ยอดสุทธิ
   isPaid: boolean;                    // ชำระเงินแล้วหรือยัง
-  paymentMethod?: 'cash' | 'transfer' | 'credit' | 'unpaid';
+  paymentMethod?: 'cash' | 'transfer' | 'credit' | 'gov_credit' | 'unpaid';
+  govCreditInfo?: GovCreditInfo;      // ข้อมูลเครดิตสำหรับหน่วยงานราชการ/สถานศึกษา
   partsUsed: UsedPart[];              // รายการอะไหล่ที่ใช้
   trackingToken?: string;             // รหัสสำหรับเช็คสถานะ
   lineNotified: boolean;              // แจ้งเตือนไลน์แล้วหรือยัง
@@ -95,6 +96,23 @@ export interface POSCartItem {
   isCustomItem?: boolean;
 }
 
+export type GovBillingStatus = 'pending_billing' | 'billed' | 'paid';
+
+export interface GovCreditInfo {
+  agencyName: string;            // ชื่อหน่วยงานราชการ / โรงเรียน / อบต. / เทศบาล
+  taxId?: string;                // เลขประจำตัวผู้เสียภาษีหน่วยงาน 13 หลัก
+  department?: string;           // กอง / ฝ่าย / งานพัสดุ / แผนก
+  orderNumber?: string;          // เลขที่ใบสั่งซื้อ / สั่งจ้าง / ขออนุมัติ (PO No.)
+  contactPerson?: string;        // ผู้ประสานงาน / เจ้าหน้าที่พัสดุ
+  contactPhone?: string;         // เบอร์โทรติดต่อ
+  creditDays: number;            // จำนวนวันเครดิต (เช่น 15, 30, 45, 60 วัน)
+  dueDate: string;               // วันครบกำหนดชำระเงิน (YYYY-MM-DD)
+  billingStatus: GovBillingStatus; // สถานะการวางบิล: 'pending_billing' (รอวางบิล) | 'billed' (วางบิลแล้ว) | 'paid' (เบิกจ่ายแล้ว)
+  billedDate?: string;           // วันที่วางบิลจริง
+  paidDate?: string;             // วันที่ได้รับเงินเบิกจ่าย
+  notes?: string;                // หมายเหตุโครงการ / เลขที่เบิกเงิน
+}
+
 export interface POSSaleRecord {
   id: string;
   receiptNumber: string;
@@ -103,13 +121,14 @@ export interface POSSaleRecord {
   discount: number;
   discountMode?: 'baht' | 'percent';
   totalAmount: number;
-  paymentMethod: 'cash' | 'transfer' | 'credit';
+  paymentMethod: 'cash' | 'transfer' | 'credit' | 'gov_credit';
   amountReceived: number;
   change: number;
   customerName?: string;
   customerPhone?: string;
   cashierName?: string;
   notes?: string;
+  govCreditInfo?: GovCreditInfo;  // ข้อมูลหน่วยงานราชการที่ขอเครดิต/วางบิล
   createdAt: string;
 }
 

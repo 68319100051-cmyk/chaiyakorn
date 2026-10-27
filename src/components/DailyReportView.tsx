@@ -15,7 +15,8 @@ import {
   ShieldAlert,
   Tag,
   ShoppingCart,
-  Receipt
+  Receipt,
+  Building2
 } from 'lucide-react';
 
 interface DailyReportViewProps {
@@ -86,6 +87,30 @@ export const DailyReportView: React.FC<DailyReportViewProps> = ({
       .reduce((sum, t) => sum + t.totalAmount, 0) +
     dailyPOSSales
       .filter(s => s.paymentMethod === 'transfer')
+      .reduce((sum, s) => sum + s.totalAmount, 0);
+
+  const govCreditTotal =
+    dailyCompletedTickets
+      .filter(t => t.paymentMethod === 'gov_credit')
+      .reduce((sum, t) => sum + t.totalAmount, 0) +
+    dailyPOSSales
+      .filter(s => s.paymentMethod === 'gov_credit')
+      .reduce((sum, s) => sum + s.totalAmount, 0);
+
+  const govCreditPending =
+    dailyCompletedTickets
+      .filter(t => t.paymentMethod === 'gov_credit' && t.govCreditInfo?.billingStatus !== 'paid')
+      .reduce((sum, t) => sum + t.totalAmount, 0) +
+    dailyPOSSales
+      .filter(s => s.paymentMethod === 'gov_credit' && s.govCreditInfo?.billingStatus !== 'paid')
+      .reduce((sum, s) => sum + s.totalAmount, 0);
+
+  const govCreditPaid =
+    dailyCompletedTickets
+      .filter(t => t.paymentMethod === 'gov_credit' && t.govCreditInfo?.billingStatus === 'paid')
+      .reduce((sum, t) => sum + t.totalAmount, 0) +
+    dailyPOSSales
+      .filter(s => s.paymentMethod === 'gov_credit' && s.govCreditInfo?.billingStatus === 'paid')
       .reduce((sum, s) => sum + s.totalAmount, 0);
 
   // Searchable Historical Repair Logs
@@ -275,9 +300,9 @@ export const DailyReportView: React.FC<DailyReportViewProps> = ({
             <h3 className="text-sm font-bold text-slate-800 dark:text-white mb-3">
               ช่องทางการรับชำระเงินประจำวันที่ {selectedDate}
             </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
               <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-700">
-                <span className="text-slate-500">โอนเงินธนาคาร / QR PromptPay:</span>
+                <span className="text-slate-500">โอนเงินธนาคาร / QR พร้อมเพย์:</span>
                 <p className="text-lg font-bold text-blue-600 dark:text-blue-400 mt-0.5">
                   ฿{transferTotal.toLocaleString()}
                 </p>
@@ -286,6 +311,20 @@ export const DailyReportView: React.FC<DailyReportViewProps> = ({
                 <span className="text-slate-500">เงินสด (Cash):</span>
                 <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
                   ฿{cashTotal.toLocaleString()}
+                </p>
+              </div>
+              <div className="p-3 rounded-lg bg-purple-50/70 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800/60">
+                <div className="flex items-center justify-between text-purple-900 dark:text-purple-300">
+                  <span className="font-semibold flex items-center gap-1">
+                    <Building2 className="w-3.5 h-3.5" />
+                    <span>เครดิตราชการ / วางบิล:</span>
+                  </span>
+                </div>
+                <p className="text-lg font-extrabold text-purple-700 dark:text-purple-300 mt-0.5">
+                  ฿{govCreditTotal.toLocaleString()}
+                </p>
+                <p className="text-[10px] text-purple-600 dark:text-purple-400 mt-0.5">
+                  รอเบิกจ่าย ฿{govCreditPending.toLocaleString()} • ได้รับแล้ว ฿{govCreditPaid.toLocaleString()}
                 </p>
               </div>
               <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-700">
@@ -441,9 +480,16 @@ export const DailyReportView: React.FC<DailyReportViewProps> = ({
                           ฿{s.totalAmount.toLocaleString()}
                         </td>
                         <td className="py-3 px-3 text-center">
-                          <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 dark:bg-slate-700">
-                            {s.paymentMethod === 'transfer' ? 'โอนเงิน' : s.paymentMethod === 'credit' ? 'บัตรเครดิต' : 'เงินสด'}
-                          </span>
+                          {s.paymentMethod === 'gov_credit' ? (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300 inline-flex items-center gap-0.5">
+                              <Building2 className="w-3 h-3" />
+                              <span>เครดิตราชการ</span>
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 dark:bg-slate-700">
+                              {s.paymentMethod === 'transfer' ? 'โอนเงิน' : s.paymentMethod === 'credit' ? 'บัตรเครดิต' : 'เงินสด'}
+                            </span>
+                          )}
                         </td>
                         <td className="py-3 px-3 text-center">
                           {onViewPOSReceipt && (

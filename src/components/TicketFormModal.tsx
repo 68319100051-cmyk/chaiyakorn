@@ -4,7 +4,8 @@ import {
   InventoryItem,
   DeviceType,
   RepairStatus,
-  UsedPart
+  UsedPart,
+  GovCreditInfo
 } from '../types';
 import {
   X,
@@ -18,7 +19,8 @@ import {
   Printer,
   Monitor,
   Check,
-  AlertCircle
+  AlertCircle,
+  Building2
 } from 'lucide-react';
 
 interface TicketFormModalProps {
@@ -99,10 +101,17 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
   const [discountMode, setDiscountMode] = useState<'baht' | 'percent'>('baht');
   const [discountPercentInput, setDiscountPercentInput] = useState<string>('10');
   const [isPaid, setIsPaid] = useState<boolean>(false);
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'transfer' | 'credit' | 'unpaid'>('unpaid');
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'transfer' | 'credit' | 'gov_credit' | 'unpaid'>('unpaid');
   const [receivedDate, setReceivedDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [estimatedCompletionDate, setEstimatedCompletionDate] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+
+  // Government Credit State
+  const [govAgencyName, setGovAgencyName] = useState<string>('');
+  const [govTaxId, setGovTaxId] = useState<string>('');
+  const [govDepartment, setGovDepartment] = useState<string>('งานพัสดุ');
+  const [govOrderNumber, setGovOrderNumber] = useState<string>('');
+  const [govCreditDays, setGovCreditDays] = useState<number>(30);
 
   // Parts Used State
   const [partsUsed, setPartsUsed] = useState<UsedPart[]>([]);
@@ -140,6 +149,13 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
       setEstimatedCompletionDate(ticketToEdit.estimatedCompletionDate || '');
       setPartsUsed(ticketToEdit.partsUsed || []);
       setInitialPartsUsed(ticketToEdit.partsUsed || []);
+
+      // Gov Credit Info
+      setGovAgencyName(ticketToEdit.govCreditInfo?.agencyName || '');
+      setGovTaxId(ticketToEdit.govCreditInfo?.taxId || '');
+      setGovDepartment(ticketToEdit.govCreditInfo?.department || 'งานพัสดุ');
+      setGovOrderNumber(ticketToEdit.govCreditInfo?.orderNumber || '');
+      setGovCreditDays(ticketToEdit.govCreditInfo?.creditDays || 30);
     } else {
       // New Ticket defaults
       setTicketNumber(generateNextTicketNumber());
@@ -171,6 +187,13 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
       setEstimatedCompletionDate(tomorrow.toISOString().split('T')[0]);
       setPartsUsed([]);
       setInitialPartsUsed([]);
+
+      // Reset Gov Credit Info
+      setGovAgencyName('');
+      setGovTaxId('');
+      setGovDepartment('งานพัสดุ');
+      setGovOrderNumber('');
+      setGovCreditDays(30);
     }
   }, [ticketToEdit, isOpen]);
 
@@ -262,6 +285,21 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
     const now = new Date().toISOString();
     const finalTicketNumber = ticketNumber.trim() || generateNextTicketNumber();
 
+    let govCreditInfo: GovCreditInfo | undefined = undefined;
+    if (paymentMethod === 'gov_credit') {
+      const dueDateObj = new Date();
+      dueDateObj.setDate(dueDateObj.getDate() + (govCreditDays || 30));
+      govCreditInfo = {
+        agencyName: govAgencyName.trim() || customerName.trim(),
+        taxId: govTaxId.trim() || undefined,
+        department: govDepartment.trim() || undefined,
+        orderNumber: govOrderNumber.trim() || undefined,
+        creditDays: govCreditDays || 30,
+        dueDate: dueDateObj.toISOString().split('T')[0],
+        billingStatus: ticketToEdit?.govCreditInfo?.billingStatus || (isPaid ? 'paid' : 'pending_billing')
+      };
+    }
+
     const ticketData: RepairTicket = {
       id: ticketToEdit ? ticketToEdit.id : `ticket-${Date.now()}`,
       ticketNumber: finalTicketNumber,
@@ -287,6 +325,7 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
       totalAmount: Math.max(0, Number(totalAmount) || 0),
       isPaid: Boolean(isPaid),
       paymentMethod: paymentMethod || 'unpaid',
+      govCreditInfo,
       partsUsed: partsUsed || [],
       trackingToken: (ticketToEdit?.trackingToken) || finalTicketNumber,
       lineNotified: Boolean(ticketToEdit?.lineNotified),
@@ -1050,32 +1089,134 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
               </div>
             </div>
 
-            {/* Payment Checkbox */}
-            <div className="flex flex-wrap items-center justify-between gap-3 text-xs pt-1">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={isPaid}
-                  onChange={e => setIsPaid(e.target.checked)}
-                  className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
-                />
-                <span className="font-semibold text-slate-700 dark:text-slate-200">
-                  ลูกค้าชำระเงินเรียบร้อยแล้ว
-                </span>
-              </label>
-
-              {isPaid && (
+            {/* Payment Section */}
+            <div className="space-y-3 pt-1">
+              <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
                 <div className="flex items-center gap-2">
-                  <span className="text-slate-500">วิธีชำระ:</span>
+                  <span className="font-semibold text-slate-700 dark:text-slate-300">ช่องทางชำระเงิน / รูปแบบการชำระ:</span>
                   <select
                     value={paymentMethod}
-                    onChange={e => setPaymentMethod(e.target.value as any)}
-                    className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700"
+                    onChange={e => {
+                      const val = e.target.value as any;
+                      setPaymentMethod(val);
+                      if (val === 'cash' || val === 'transfer' || val === 'credit') {
+                        setIsPaid(true);
+                      } else if (val === 'unpaid') {
+                        setIsPaid(false);
+                      }
+                    }}
+                    className="px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-medium text-xs text-slate-800 dark:text-white"
                   >
-                    <option value="cash">เงินสด (Cash)</option>
-                    <option value="transfer">โอนเงินธนาคาร / QR PromptPay</option>
-                    <option value="credit">บัตรเครดิต</option>
+                    <option value="unpaid">รอชำระเมื่อมารับเครื่อง (ยังไม่ชำระ)</option>
+                    <option value="cash">เงินสด (ชำระแล้ว)</option>
+                    <option value="transfer">โอนเงินธนาคาร / QR PromptPay (ชำระแล้ว)</option>
+                    <option value="credit">บัตรเครดิต (ชำระแล้ว)</option>
+                    <option value="gov_credit">🏛️ เครดิตสำหรับราชการ / วางบิล (Government Credit)</option>
                   </select>
+                </div>
+
+                {paymentMethod !== 'gov_credit' && (
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={isPaid}
+                      onChange={e => setIsPaid(e.target.checked)}
+                      className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
+                    />
+                    <span className="font-semibold text-slate-700 dark:text-slate-200">
+                      ชำระเงินเรียบร้อยแล้ว
+                    </span>
+                  </label>
+                )}
+              </div>
+
+              {/* Government Credit Extra Inputs */}
+              {paymentMethod === 'gov_credit' && (
+                <div className="p-3 rounded-xl bg-purple-50/80 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800/60 space-y-2 text-xs">
+                  <div className="flex items-center justify-between pb-1 border-b border-purple-200 dark:border-purple-800">
+                    <span className="font-bold text-purple-900 dark:text-purple-200 flex items-center gap-1.5">
+                      <Building2 className="w-4 h-4 text-purple-600" />
+                      <span>ข้อมูลเครดิตสำหรับหน่วยงานราชการ / โรงเรียน</span>
+                    </span>
+                    <span className="text-[10px] text-purple-700 dark:text-purple-300 font-bold">
+                      เครดิต {govCreditDays} วัน
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">
+                        ชื่อหน่วยงานราชการ / สถาบัน
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="เช่น โรงเรียนพัทลุง, อบต."
+                        value={govAgencyName}
+                        onChange={e => setGovAgencyName(e.target.value)}
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-purple-200 dark:border-purple-700 bg-white dark:bg-slate-800"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">
+                        เลขผู้เสียภาษี 13 หลัก
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="เลข 13 หลัก"
+                        value={govTaxId}
+                        onChange={e => setGovTaxId(e.target.value)}
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-purple-200 dark:border-purple-700 bg-white dark:bg-slate-800 font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">
+                        เลขที่ใบสั่งซื้อ / PO No.
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="เช่น PO-69/01"
+                        value={govOrderNumber}
+                        onChange={e => setGovOrderNumber(e.target.value)}
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-purple-200 dark:border-purple-700 bg-white dark:bg-slate-800 font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">
+                        ฝ่าย / งานพัสดุ
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="งานพัสดุ / แผนกคอมพิวเตอร์"
+                        value={govDepartment}
+                        onChange={e => setGovDepartment(e.target.value)}
+                        className="w-full px-2.5 py-1 rounded-lg border border-purple-200 dark:border-purple-700 bg-white dark:bg-slate-800"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">
+                        เครดิตเทอม
+                      </label>
+                      <div className="flex gap-1">
+                        {[15, 30, 45, 60].map(days => (
+                          <button
+                            key={days}
+                            type="button"
+                            onClick={() => setGovCreditDays(days)}
+                            className={`flex-1 py-1 rounded text-[11px] font-bold transition-all cursor-pointer ${
+                              govCreditDays === days
+                                ? 'bg-purple-600 text-white shadow-xs'
+                                : 'bg-white dark:bg-slate-800 border border-purple-200 text-purple-900 dark:text-purple-300'
+                            }`}
+                          >
+                            {days}ว.
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

@@ -4,8 +4,11 @@ import {
   ShopSettings,
   POSCartItem,
   POSSaleRecord,
-  InventoryCategory
+  InventoryCategory,
+  GovCreditInfo,
+  GovBillingStatus
 } from '../types';
+import { dbService } from '../services/db';
 import {
   Search,
   Plus,
@@ -25,7 +28,11 @@ import {
   X,
   Printer,
   Sparkles,
-  Tag
+  Tag,
+  Building2,
+  Calendar,
+  Clock,
+  FileCheck
 } from 'lucide-react';
 
 interface POSViewProps {
@@ -67,9 +74,20 @@ export const POSView: React.FC<POSViewProps> = ({
   const [cashierName, setCashierName] = useState('พนักงานหน้าร้าน');
   const [discountInput, setDiscountInput] = useState('0');
   const [discountMode, setDiscountMode] = useState<'baht' | 'percent'>('baht');
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'transfer' | 'credit'>('cash');
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'transfer' | 'credit' | 'gov_credit'>('cash');
   const [cashReceivedInput, setCashReceivedInput] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Government Credit State
+  const [govAgencyName, setGovAgencyName] = useState('');
+  const [govTaxId, setGovTaxId] = useState('');
+  const [govDepartment, setGovDepartment] = useState('งานพัสดุ');
+  const [govOrderNumber, setGovOrderNumber] = useState('');
+  const [govContactPerson, setGovContactPerson] = useState('');
+  const [govContactPhone, setGovContactPhone] = useState('');
+  const [govCreditDays, setGovCreditDays] = useState<number>(30);
+  const [govNotes, setGovNotes] = useState('');
+  const [historyFilter, setHistoryFilter] = useState<'all' | 'normal' | 'gov_credit'>('all');
 
   // Quick Custom Product Entry Modal
   const [isCustomModalOpen, setIsCustomModalOpen] = useState(false);
@@ -255,10 +273,34 @@ export const POSView: React.FC<POSViewProps> = ({
       return;
     }
 
+    let govCreditInfo: GovCreditInfo | undefined = undefined;
+    if (paymentMethod === 'gov_credit') {
+      if (!govAgencyName.trim()) {
+        alert('กรุณาระบุชื่อหน่วยงานราชการหรือโรงเรียนผู้ขอใช้เครดิต');
+        return;
+      }
+      const dueDateObj = new Date();
+      dueDateObj.setDate(dueDateObj.getDate() + (govCreditDays || 30));
+      const dueDate = dueDateObj.toISOString().split('T')[0];
+
+      govCreditInfo = {
+        agencyName: govAgencyName.trim(),
+        taxId: govTaxId.trim() || undefined,
+        department: govDepartment.trim() || undefined,
+        orderNumber: govOrderNumber.trim() || undefined,
+        contactPerson: govContactPerson.trim() || undefined,
+        contactPhone: govContactPhone.trim() || undefined,
+        creditDays: govCreditDays || 30,
+        dueDate,
+        billingStatus: 'pending_billing',
+        notes: govNotes.trim() || undefined
+      };
+    }
+
     const receiptNumber = generateNextReceiptNumber();
     const finalAmountReceived = paymentMethod === 'cash'
       ? (cashReceived >= totalAmount ? cashReceived : totalAmount)
-      : totalAmount;
+      : (paymentMethod === 'gov_credit' ? 0 : totalAmount);
     const finalChange = paymentMethod === 'cash' ? Math.max(0, finalAmountReceived - totalAmount) : 0;
 
     const saleRecord: POSSaleRecord = {
@@ -272,9 +314,10 @@ export const POSView: React.FC<POSViewProps> = ({
       paymentMethod,
       amountReceived: finalAmountReceived,
       change: finalChange,
-      customerName: customerName.trim() || 'ลูกค้าทั่วไป (หน้าร้าน)',
-      customerPhone: customerPhone.trim() || '',
+      customerName: paymentMethod === 'gov_credit' ? govAgencyName.trim() : (customerName.trim() || 'ลูกค้าทั่วไป (หน้าร้าน)'),
+      customerPhone: paymentMethod === 'gov_credit' ? (govContactPhone.trim() || customerPhone.trim()) : customerPhone.trim(),
       cashierName: cashierName.trim() || 'เจ้าหน้าที่ประจำร้าน',
+      govCreditInfo,
       createdAt: new Date().toISOString()
     };
 
@@ -288,6 +331,14 @@ export const POSView: React.FC<POSViewProps> = ({
       setCashReceivedInput('');
       setCustomerName('');
       setCustomerPhone('');
+      if (paymentMethod === 'gov_credit') {
+        setGovAgencyName('');
+        setGovTaxId('');
+        setGovOrderNumber('');
+        setGovContactPerson('');
+        setGovContactPhone('');
+        setGovNotes('');
+      }
 
       // Open receipt modal immediately
       onViewReceipt(saleRecord);
@@ -660,16 +711,16 @@ export const POSView: React.FC<POSViewProps> = ({
             {/* Payment Method Selector */}
             <div>
               <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1.5">
-                ช่องทางชำระเงิน
+                ช่องทางชำระเงิน / รูปแบบการซื้อ
               </label>
-              <div className="grid grid-cols-3 gap-1.5">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
                 <button
                   type="button"
                   onClick={() => setPaymentMethod('cash')}
-                  className={`flex flex-col items-center justify-center py-2 px-1 rounded-xl border text-xs font-semibold transition-all ${
+                  className={`flex flex-col items-center justify-center py-2 px-1 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
                     paymentMethod === 'cash'
                       ? 'bg-emerald-50 dark:bg-emerald-950/80 border-emerald-500 text-emerald-700 dark:text-emerald-300 ring-2 ring-emerald-500/20'
-                      : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
+                      : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50'
                   }`}
                 >
                   <Banknote className="w-4 h-4 mb-0.5" />
@@ -679,10 +730,10 @@ export const POSView: React.FC<POSViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setPaymentMethod('transfer')}
-                  className={`flex flex-col items-center justify-center py-2 px-1 rounded-xl border text-xs font-semibold transition-all ${
+                  className={`flex flex-col items-center justify-center py-2 px-1 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
                     paymentMethod === 'transfer'
                       ? 'bg-blue-50 dark:bg-blue-950/80 border-blue-500 text-blue-700 dark:text-blue-300 ring-2 ring-blue-500/20'
-                      : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
+                      : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50'
                   }`}
                 >
                   <QrCode className="w-4 h-4 mb-0.5" />
@@ -692,14 +743,27 @@ export const POSView: React.FC<POSViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setPaymentMethod('credit')}
-                  className={`flex flex-col items-center justify-center py-2 px-1 rounded-xl border text-xs font-semibold transition-all ${
+                  className={`flex flex-col items-center justify-center py-2 px-1 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
                     paymentMethod === 'credit'
-                      ? 'bg-purple-50 dark:bg-purple-950/80 border-purple-500 text-purple-700 dark:text-purple-300 ring-2 ring-purple-500/20'
-                      : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
+                      ? 'bg-amber-50 dark:bg-amber-950/80 border-amber-500 text-amber-700 dark:text-amber-300 ring-2 ring-amber-500/20'
+                      : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50'
                   }`}
                 >
                   <CreditCard className="w-4 h-4 mb-0.5" />
                   <span>บัตรเครดิต</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod('gov_credit')}
+                  className={`flex flex-col items-center justify-center py-2 px-1 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
+                    paymentMethod === 'gov_credit'
+                      ? 'bg-purple-50 dark:bg-purple-950/80 border-purple-500 text-purple-700 dark:text-purple-300 ring-2 ring-purple-500/20'
+                      : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50'
+                  }`}
+                >
+                  <Building2 className="w-4 h-4 mb-0.5 text-purple-600 dark:text-purple-400" />
+                  <span>เครดิตราชการ</span>
                 </button>
               </div>
             </div>
@@ -764,6 +828,139 @@ export const POSView: React.FC<POSViewProps> = ({
                 </p>
               </div>
             )}
+
+            {/* GOVERNMENT CREDIT INPUT FORM (If gov_credit selected) */}
+            {paymentMethod === 'gov_credit' && (
+              <div className="bg-purple-50/80 dark:bg-purple-950/40 p-3 rounded-xl border border-purple-200 dark:border-purple-800/70 space-y-2.5 text-xs text-purple-950 dark:text-purple-200 animate-in fade-in duration-150">
+                <div className="flex items-center justify-between border-b border-purple-200 dark:border-purple-800/80 pb-1.5">
+                  <span className="font-bold text-purple-900 dark:text-purple-200 flex items-center gap-1.5">
+                    <Building2 className="w-4 h-4 text-purple-600" />
+                    <span>ข้อมูลส่วนราชการ / เอกสารวางบิล</span>
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-200/70 dark:bg-purple-900 text-purple-800 dark:text-purple-200 font-bold">
+                    เครดิต {govCreditDays} วัน
+                  </span>
+                </div>
+
+                {/* Agency Quick Presets */}
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                    ชื่อหน่วยงานราชการ / สถาบัน <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="flex flex-wrap gap-1 mb-1.5">
+                    {[
+                      'โรงเรียนพัทลุง',
+                      'อบต.ควนขนุน',
+                      'เทศบาลเมืองพัทลุง',
+                      'รพ.สต.',
+                      'สพป.พัทลุง'
+                    ].map(preset => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => setGovAgencyName(preset)}
+                        className="px-2 py-0.5 rounded-md bg-white dark:bg-slate-800 border border-purple-200 dark:border-purple-800 text-[10px] hover:bg-purple-100 text-purple-800 dark:text-purple-300 font-medium cursor-pointer"
+                      >
+                        +{preset}
+                      </button>
+                    ))}
+                  </div>
+                  <input
+                    type="text"
+                    required
+                    placeholder="เช่น โรงเรียนเทศบาลบ้านคูหาสวรรค์, อบต.พนมวังก์"
+                    value={govAgencyName}
+                    onChange={e => setGovAgencyName(e.target.value)}
+                    className="w-full px-2.5 py-1.5 rounded-lg border border-purple-300 dark:border-purple-700 bg-white dark:bg-slate-800 text-xs font-semibold text-slate-900 dark:text-white"
+                  />
+                </div>
+
+                {/* Tax ID & PO Number */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                      เลขผู้เสียภาษี 13 หลัก
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={13}
+                      placeholder="เช่น 0994000XXXXXX"
+                      value={govTaxId}
+                      onChange={e => setGovTaxId(e.target.value)}
+                      className="w-full px-2.5 py-1 rounded-lg border border-purple-300 dark:border-purple-700 bg-white dark:bg-slate-800 font-mono text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                      เลขที่ใบสั่งซื้อ / PO
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="เช่น PO-69/004"
+                      value={govOrderNumber}
+                      onChange={e => setGovOrderNumber(e.target.value)}
+                      className="w-full px-2.5 py-1 rounded-lg border border-purple-300 dark:border-purple-700 bg-white dark:bg-slate-800 font-mono text-xs"
+                    />
+                  </div>
+                </div>
+
+                {/* Department & Contact Officer */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                      ฝ่าย / งานพัสดุ
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="เช่น งานพัสดุ / กองคลัง"
+                      value={govDepartment}
+                      onChange={e => setGovDepartment(e.target.value)}
+                      className="w-full px-2.5 py-1 rounded-lg border border-purple-300 dark:border-purple-700 bg-white dark:bg-slate-800 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                      เจ้าหน้าที่ผู้สั่งซื้อ
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="เช่น ครูสมหมาย / คุณสายใจ"
+                      value={govContactPerson}
+                      onChange={e => setGovContactPerson(e.target.value)}
+                      className="w-full px-2.5 py-1 rounded-lg border border-purple-300 dark:border-purple-700 bg-white dark:bg-slate-800 text-xs"
+                    />
+                  </div>
+                </div>
+
+                {/* Credit Term Days */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">
+                      ระยะเวลาเครดิตเทอม
+                    </label>
+                    <span className="text-[10px] font-bold text-purple-700 dark:text-purple-300">
+                      ครบกำหนด: {new Date(Date.now() + govCreditDays * 86400000).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {[15, 30, 45, 60].map(days => (
+                      <button
+                        key={days}
+                        type="button"
+                        onClick={() => setGovCreditDays(days)}
+                        className={`py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                          govCreditDays === days
+                            ? 'bg-purple-600 text-white shadow-xs'
+                            : 'bg-white dark:bg-slate-800 border border-purple-200 dark:border-purple-800 text-purple-900 dark:text-purple-300 hover:bg-purple-100'
+                        }`}
+                      >
+                        {days} วัน
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Pricing Totals & Final Checkout Button */}
@@ -791,7 +988,11 @@ export const POSView: React.FC<POSViewProps> = ({
               type="button"
               onClick={handleCheckout}
               disabled={cart.length === 0 || isSubmitting}
-              className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-extrabold text-sm shadow-lg shadow-emerald-500/25 active:scale-98 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer"
+              className={`w-full py-3.5 px-4 rounded-xl font-extrabold text-sm shadow-lg active:scale-98 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer text-white ${
+                paymentMethod === 'gov_credit'
+                  ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 shadow-purple-500/25'
+                  : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-emerald-500/25'
+              }`}
             >
               {isSubmitting ? (
                 <>
@@ -800,8 +1001,12 @@ export const POSView: React.FC<POSViewProps> = ({
                 </>
               ) : (
                 <>
-                  <Receipt className="w-4 h-4" />
-                  <span>บันทึกการขาย & พิมพ์ใบเสร็จ (฿{totalAmount.toLocaleString()})</span>
+                  {paymentMethod === 'gov_credit' ? <Building2 className="w-4 h-4" /> : <Receipt className="w-4 h-4" />}
+                  <span>
+                    {paymentMethod === 'gov_credit'
+                      ? `ออกใบส่งของ / ใบวางบิลราชการ (฿${totalAmount.toLocaleString()})`
+                      : `บันทึกการขาย & พิมพ์ใบเสร็จ (฿${totalAmount.toLocaleString()})`}
+                  </span>
                 </>
               )}
             </button>
@@ -973,65 +1178,185 @@ export const POSView: React.FC<POSViewProps> = ({
       {/* Sales History Drawer / Modal */}
       {showHistory && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl max-w-2xl w-full p-5 border border-slate-200 dark:border-slate-700 shadow-2xl space-y-4 max-h-[85vh] flex flex-col">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl max-w-2xl w-full p-5 border border-slate-200 dark:border-slate-700 shadow-2xl space-y-4 max-h-[88vh] flex flex-col">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-700">
               <div className="flex items-center gap-2">
                 <History className="w-5 h-5 text-emerald-600" />
-                <h3 className="font-bold text-base text-slate-800 dark:text-white">
-                  ประวัติบิลขายหน้าร้านวันนี้ ({todaySales.length} รายการ • รวม ฿{todayTotalRevenue.toLocaleString()})
-                </h3>
+                <div>
+                  <h3 className="font-bold text-base text-slate-800 dark:text-white">
+                    ประวัติบิลขายหน้าร้านวันนี้
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    {todaySales.length} รายการ • รวม ฿{todayTotalRevenue.toLocaleString()}
+                  </p>
+                </div>
               </div>
               <button
                 onClick={() => setShowHistory(false)}
-                className="text-slate-400 hover:text-slate-600"
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
+            {/* Filter Tabs */}
+            <div className="flex items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-700/60 rounded-xl text-xs font-semibold">
+              <button
+                type="button"
+                onClick={() => setHistoryFilter('all')}
+                className={`flex-1 py-1.5 rounded-lg transition-colors cursor-pointer ${
+                  historyFilter === 'all'
+                    ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 font-bold shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                }`}
+              >
+                ทั้งหมด ({todaySales.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setHistoryFilter('normal')}
+                className={`flex-1 py-1.5 rounded-lg transition-colors cursor-pointer ${
+                  historyFilter === 'normal'
+                    ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 font-bold shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                }`}
+              >
+                เงินสด / โอน ({todaySales.filter(s => s.paymentMethod !== 'gov_credit').length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setHistoryFilter('gov_credit')}
+                className={`flex-1 py-1.5 rounded-lg transition-colors cursor-pointer ${
+                  historyFilter === 'gov_credit'
+                    ? 'bg-purple-600 text-white font-bold shadow-xs'
+                    : 'text-purple-700 dark:text-purple-300 hover:bg-purple-100/50'
+                }`}
+              >
+                เครดิตราชการ ({todaySales.filter(s => s.paymentMethod === 'gov_credit').length})
+              </button>
+            </div>
+
             <div className="flex-1 overflow-y-auto space-y-2 pr-1">
-              {todaySales.length === 0 ? (
+              {todaySales
+                .filter(s => {
+                  if (historyFilter === 'normal') return s.paymentMethod !== 'gov_credit';
+                  if (historyFilter === 'gov_credit') return s.paymentMethod === 'gov_credit';
+                  return true;
+                })
+                .length === 0 ? (
                 <div className="py-12 text-center text-slate-400">
-                  ยังไม่มีรายการขายหน้าร้านในวันนี้
+                  ไม่พบรายการขายตามตัวกรองที่เลือก
                 </div>
               ) : (
-                todaySales.map((sale) => (
-                  <div
-                    key={sale.id}
-                    className="p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 flex items-center justify-between gap-3 text-xs"
-                  >
-                    <div className="space-y-0.5">
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono font-bold text-blue-600 dark:text-blue-400">
-                          {sale.receiptNumber}
-                        </span>
-                        <span className="text-[10px] text-slate-400">
-                          {new Date(sale.createdAt).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น.
-                        </span>
-                      </div>
-                      <p className="text-slate-700 dark:text-slate-300 font-medium">
-                        {sale.items.map(i => `${i.name} (x${i.quantity})`).join(', ')}
-                      </p>
-                      <p className="text-[10px] text-slate-400">
-                        ลูกค้า: {sale.customerName || 'ลูกค้าทั่วไป'} • วิธี: {sale.paymentMethod}
-                      </p>
-                    </div>
+                todaySales
+                  .filter(s => {
+                    if (historyFilter === 'normal') return s.paymentMethod !== 'gov_credit';
+                    if (historyFilter === 'gov_credit') return s.paymentMethod === 'gov_credit';
+                    return true;
+                  })
+                  .map((sale) => {
+                    const isGov = sale.paymentMethod === 'gov_credit';
+                    const govInfo = sale.govCreditInfo;
+                    const billingStatus = govInfo?.billingStatus || 'pending_billing';
 
-                    <div className="text-right shrink-0 flex items-center gap-2">
-                      <span className="text-sm font-black text-emerald-600 dark:text-emerald-400 block">
-                        ฿{sale.totalAmount.toLocaleString()}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => onViewReceipt(sale)}
-                        className="p-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 text-slate-700 dark:text-slate-300"
-                        title="ดูและพิมพ์ใบเสร็จซ้ำ"
+                    return (
+                      <div
+                        key={sale.id}
+                        className={`p-3 rounded-xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs ${
+                          isGov
+                            ? 'bg-purple-50/50 dark:bg-purple-950/20 border-purple-200 dark:border-purple-800/60'
+                            : 'bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700'
+                        }`}
                       >
-                        <Printer className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                ))
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-mono font-bold text-blue-600 dark:text-blue-400">
+                              {sale.receiptNumber}
+                            </span>
+                            <span className="text-[10px] text-slate-400">
+                              {new Date(sale.createdAt).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น.
+                            </span>
+
+                            {isGov ? (
+                              <span className="px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 font-bold text-[10px] flex items-center gap-1">
+                                <Building2 className="w-3 h-3" />
+                                <span>เครดิตราชการ</span>
+                              </span>
+                            ) : (
+                              <span className="px-1.5 py-0.2 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-[10px]">
+                                {sale.paymentMethod === 'cash' ? 'เงินสด' : sale.paymentMethod === 'transfer' ? 'โอน' : 'บัตร'}
+                              </span>
+                            )}
+
+                            {isGov && (
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                billingStatus === 'paid'
+                                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                                  : billingStatus === 'billed'
+                                  ? 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
+                                  : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                              }`}>
+                                {billingStatus === 'paid' ? 'ชำระแล้ว' : billingStatus === 'billed' ? 'วางบิลแล้ว' : 'รอวางบิล'}
+                              </span>
+                            )}
+                          </div>
+
+                          <p className="text-slate-800 dark:text-slate-200 font-medium">
+                            {sale.items.map(i => `${i.name} (x${i.quantity})`).join(', ')}
+                          </p>
+
+                          <div className="text-[10px] text-slate-500 flex flex-wrap items-center gap-2">
+                            <span>
+                              {isGov ? `หน่วยงาน: ${govInfo?.agencyName || sale.customerName}` : `ลูกค้า: ${sale.customerName || 'ทั่วไป'}`}
+                            </span>
+                            {govInfo?.orderNumber && (
+                              <span>• PO: <span className="font-mono font-bold text-slate-700 dark:text-slate-300">{govInfo.orderNumber}</span></span>
+                            )}
+                            {govInfo?.dueDate && (
+                              <span>• ครบกำหนด: <span className="font-semibold text-purple-700 dark:text-purple-300">{govInfo.dueDate}</span></span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between sm:justify-end gap-2.5 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-200 dark:border-slate-700">
+                          <div className="text-left sm:text-right">
+                            <span className="text-sm font-black text-emerald-600 dark:text-emerald-400 block">
+                              ฿{sale.totalAmount.toLocaleString()}
+                            </span>
+                            {isGov && (
+                              <span className="text-[10px] text-slate-400 block">
+                                เครดิต {govInfo?.creditDays || 30} วัน
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Quick Billing Status Advance for Gov Credit */}
+                          {isGov && billingStatus !== 'paid' && (
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                const nextStatus = billingStatus === 'pending_billing' ? 'billed' : 'paid';
+                                await dbService.updatePOSSaleBillingStatus(sale.id, nextStatus);
+                              }}
+                              className="px-2 py-1 rounded-lg bg-purple-100 hover:bg-purple-200 dark:bg-purple-900/60 dark:hover:bg-purple-900 text-purple-800 dark:text-purple-200 text-[10px] font-bold transition-colors cursor-pointer"
+                              title="คลิกเพื่อปรับสถานะการวางบิล"
+                            >
+                              {billingStatus === 'pending_billing' ? '✓ เปลี่ยนเป็น: วางบิลแล้ว' : '✓ เปลี่ยนเป็น: ชำระแล้ว'}
+                            </button>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => onViewReceipt(sale)}
+                            className="p-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 text-slate-700 dark:text-slate-300 shadow-xs cursor-pointer"
+                            title="ดูและพิมพ์ใบเสร็จ / ใบส่งของซ้ำ"
+                          >
+                            <Printer className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
               )}
             </div>
           </div>

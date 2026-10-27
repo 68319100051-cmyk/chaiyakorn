@@ -633,6 +633,45 @@ class DatabaseService {
     }
   }
 
+  async updatePOSSaleBillingStatus(
+    saleId: string,
+    billingStatus: import('../types').GovBillingStatus,
+    extra?: { billedDate?: string; paidDate?: string; notes?: string }
+  ): Promise<void> {
+    const local = getLocal<POSSaleRecord[]>(LOCAL_STORAGE_KEYS.POS_SALES, []);
+    const idx = local.findIndex(s => s.id === saleId);
+    if (idx >= 0) {
+      const existing = local[idx];
+      const now = new Date().toISOString().split('T')[0];
+      const updatedGovInfo = existing.govCreditInfo
+        ? {
+            ...existing.govCreditInfo,
+            billingStatus,
+            ...(billingStatus === 'billed' && !existing.govCreditInfo.billedDate ? { billedDate: now } : {}),
+            ...(billingStatus === 'paid' && !existing.govCreditInfo.paidDate ? { paidDate: now } : {}),
+            ...(extra?.billedDate ? { billedDate: extra.billedDate } : {}),
+            ...(extra?.paidDate ? { paidDate: extra.paidDate } : {}),
+            ...(extra?.notes ? { notes: extra.notes } : {})
+          }
+        : undefined;
+
+      const updatedSale: POSSaleRecord = {
+        ...existing,
+        govCreditInfo: updatedGovInfo
+      };
+
+      local[idx] = updatedSale;
+      setLocal(LOCAL_STORAGE_KEYS.POS_SALES, local);
+      this.notifyPOSSales(local);
+
+      try {
+        await updateDoc(doc(db, 'pos_sales', saleId), cleanFirestoreData({ govCreditInfo: updatedGovInfo }));
+      } catch (e) {
+        console.warn('Firestore update pos_sale billing status failed:', e);
+      }
+    }
+  }
+
   generateNextPOSReceiptNumber(existingSales: POSSaleRecord[] = []): string {
     const today = new Date();
     const dateStr = today.toISOString().split('T')[0].replace(/-/g, '');
