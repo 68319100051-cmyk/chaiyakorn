@@ -26,6 +26,7 @@ interface DailyReportViewProps {
   onSelectTicket: (ticket: RepairTicket) => void;
   onPrintTicket: (ticket: RepairTicket) => void;
   onViewPOSReceipt?: (sale: POSSaleRecord) => void;
+  onOpenGovBilling?: () => void;
 }
 
 export const DailyReportView: React.FC<DailyReportViewProps> = ({
@@ -34,7 +35,8 @@ export const DailyReportView: React.FC<DailyReportViewProps> = ({
   shopSettings,
   onSelectTicket,
   onPrintTicket,
-  onViewPOSReceipt
+  onViewPOSReceipt,
+  onOpenGovBilling
 }) => {
   const [selectedDate, setSelectedDate] = useState<string>(
     new Date().toISOString().split('T')[0]
@@ -313,19 +315,31 @@ export const DailyReportView: React.FC<DailyReportViewProps> = ({
                   ฿{cashTotal.toLocaleString()}
                 </p>
               </div>
-              <div className="p-3 rounded-lg bg-purple-50/70 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800/60">
-                <div className="flex items-center justify-between text-purple-900 dark:text-purple-300">
-                  <span className="font-semibold flex items-center gap-1">
-                    <Building2 className="w-3.5 h-3.5" />
-                    <span>เครดิตราชการ / วางบิล:</span>
-                  </span>
+              <div className="p-3 rounded-lg bg-purple-50/70 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800/60 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between text-purple-900 dark:text-purple-300">
+                    <span className="font-semibold flex items-center gap-1">
+                      <Building2 className="w-3.5 h-3.5" />
+                      <span>เครดิตราชการ / วางบิล:</span>
+                    </span>
+                  </div>
+                  <p className="text-lg font-extrabold text-purple-700 dark:text-purple-300 mt-0.5">
+                    ฿{govCreditTotal.toLocaleString()}
+                  </p>
+                  <p className="text-[10px] text-purple-600 dark:text-purple-400 mt-0.5">
+                    รอเบิกจ่าย ฿{govCreditPending.toLocaleString()} • ได้รับแล้ว ฿{govCreditPaid.toLocaleString()}
+                  </p>
                 </div>
-                <p className="text-lg font-extrabold text-purple-700 dark:text-purple-300 mt-0.5">
-                  ฿{govCreditTotal.toLocaleString()}
-                </p>
-                <p className="text-[10px] text-purple-600 dark:text-purple-400 mt-0.5">
-                  รอเบิกจ่าย ฿{govCreditPending.toLocaleString()} • ได้รับแล้ว ฿{govCreditPaid.toLocaleString()}
-                </p>
+                {onOpenGovBilling && (
+                  <button
+                    type="button"
+                    onClick={onOpenGovBilling}
+                    className="mt-2 w-full py-1 px-2 rounded-md bg-purple-600 hover:bg-purple-700 text-white text-[11px] font-bold flex items-center justify-center gap-1 shadow-xs transition-colors cursor-pointer"
+                  >
+                    <Building2 className="w-3 h-3" />
+                    <span>รวมบิลวางบิลราชการ (ตามเลขผู้เสียภาษี)</span>
+                  </button>
+                )}
               </div>
               <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-700">
                 <span className="text-slate-500">ส่วนลดที่ให้ลูกค้า:</span>

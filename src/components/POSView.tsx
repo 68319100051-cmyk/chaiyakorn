@@ -43,6 +43,7 @@ interface POSViewProps {
   onSaveInventoryItem: (item: InventoryItem) => Promise<void>;
   onViewReceipt: (sale: POSSaleRecord) => void;
   generateNextReceiptNumber: () => string;
+  onOpenGovBilling?: () => void;
 }
 
 const CATEGORY_TABS: { key: 'all' | InventoryCategory; label: string }[] = [
@@ -61,7 +62,8 @@ export const POSView: React.FC<POSViewProps> = ({
   onCompleteSale,
   onSaveInventoryItem,
   onViewReceipt,
-  generateNextReceiptNumber
+  generateNextReceiptNumber,
+  onOpenGovBilling
 }) => {
   // Cart State
   const [cart, setCart] = useState<POSCartItem[]>([]);
@@ -386,6 +388,19 @@ export const POSView: React.FC<POSViewProps> = ({
             <Plus className="w-4 h-4 text-blue-600 dark:text-blue-400" />
             <span>คีย์สินค้าใหม่ลงสต็อก</span>
           </button>
+
+          {/* Government Consolidated Billing Statement Button */}
+          {onOpenGovBilling && (
+            <button
+              type="button"
+              onClick={onOpenGovBilling}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-900/60 border border-purple-200 dark:border-purple-800 font-bold text-xs transition-colors cursor-pointer"
+              title="รวมบิลราชการที่เลขผู้เสียภาษีตรงกัน เพื่อออกใบวางบิลรวม"
+            >
+              <Building2 className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+              <span>รวมบิลวางบิลราชการ</span>
+            </button>
+          )}
 
           {/* Sales History Toggle */}
           <button
@@ -1235,6 +1250,25 @@ export const POSView: React.FC<POSViewProps> = ({
                 เครดิตราชการ ({todaySales.filter(s => s.paymentMethod === 'gov_credit').length})
               </button>
             </div>
+
+            {/* Quick Action: Open Consolidated Government Billing Modal */}
+            {historyFilter === 'gov_credit' && onOpenGovBilling && (
+              <div className="p-2.5 rounded-xl bg-purple-100/80 dark:bg-purple-950/80 border border-purple-200 dark:border-purple-800 flex items-center justify-between gap-2 text-xs">
+                <span className="text-purple-900 dark:text-purple-200 font-semibold">
+                  🏛️ รวมบิลราชการที่เลขผู้เสียภาษีตรงกันเป็นบิลเดียว
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowHistory(false);
+                    onOpenGovBilling();
+                  }}
+                  className="px-3 py-1 rounded-lg bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-xs transition-colors cursor-pointer shrink-0"
+                >
+                  เปิดหน้ารวมบิลวางบิล
+                </button>
+              </div>
+            )}
 
             <div className="flex-1 overflow-y-auto space-y-2 pr-1">
               {todaySales

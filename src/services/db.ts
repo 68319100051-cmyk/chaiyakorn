@@ -376,6 +376,50 @@ class DatabaseService {
     }
   }
 
+  async updateTicketBillingStatus(
+    ticketId: string,
+    billingStatus: import('../types').GovBillingStatus,
+    extra?: { billedDate?: string; paidDate?: string }
+  ): Promise<void> {
+    const local = getLocal<RepairTicket[]>(LOCAL_STORAGE_KEYS.TICKETS, INITIAL_TICKETS);
+    const idx = local.findIndex(t => t.id === ticketId);
+    if (idx >= 0) {
+      const existing = local[idx];
+      const now = new Date().toISOString().split('T')[0];
+      const updatedGovInfo = existing.govCreditInfo
+        ? {
+            ...existing.govCreditInfo,
+            billingStatus,
+            ...(billingStatus === 'billed' && !existing.govCreditInfo.billedDate ? { billedDate: now } : {}),
+            ...(billingStatus === 'paid' && !existing.govCreditInfo.paidDate ? { paidDate: now } : {}),
+            ...(extra?.billedDate ? { billedDate: extra.billedDate } : {}),
+            ...(extra?.paidDate ? { paidDate: extra.paidDate } : {})
+          }
+        : undefined;
+
+      const updatedTicket: RepairTicket = {
+        ...existing,
+        isPaid: billingStatus === 'paid' ? true : existing.isPaid,
+        govCreditInfo: updatedGovInfo,
+        updatedAt: new Date().toISOString()
+      };
+
+      local[idx] = updatedTicket;
+      setLocal(LOCAL_STORAGE_KEYS.TICKETS, local);
+      this.notifyTickets(local);
+
+      try {
+        await updateDoc(doc(db, 'repair_tickets', ticketId), cleanFirestoreData({
+          isPaid: billingStatus === 'paid' ? true : existing.isPaid,
+          govCreditInfo: updatedGovInfo,
+          updatedAt: new Date().toISOString()
+        }));
+      } catch (e) {
+        console.warn('Firestore update ticket billing status failed:', e);
+      }
+    }
+  }
+
   async deleteTicket(ticketId: string): Promise<void> {
     const local = getLocal<RepairTicket[]>(LOCAL_STORAGE_KEYS.TICKETS, INITIAL_TICKETS).filter(t => t.id !== ticketId);
     setLocal(LOCAL_STORAGE_KEYS.TICKETS, local);

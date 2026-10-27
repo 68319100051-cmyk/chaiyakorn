@@ -15,6 +15,7 @@ import { TicketFormModal } from './components/TicketFormModal';
 import { PrintReceiptModal } from './components/PrintReceiptModal';
 import { LineNotificationModal } from './components/LineNotificationModal';
 import { ShopSettingsModal } from './components/ShopSettingsModal';
+import { GovConsolidatedBillingModal } from './components/GovConsolidatedBillingModal';
 
 export default function App() {
   // Navigation State
@@ -39,6 +40,8 @@ export default function App() {
 
   const [isPOSReceiptOpen, setIsPOSReceiptOpen] = useState(false);
   const [selectedSaleToPrint, setSelectedSaleToPrint] = useState<POSSaleRecord | null>(null);
+
+  const [isGovBillingOpen, setIsGovBillingOpen] = useState(false);
 
   const [isLineModalOpen, setIsLineModalOpen] = useState(false);
   const [ticketToLine, setTicketToLine] = useState<RepairTicket | null>(null);
@@ -263,6 +266,7 @@ export default function App() {
             onLineNotify={handleLineNotify}
             onViewAllTickets={() => setActiveTab('tickets')}
             onViewInventory={() => setActiveTab('inventory')}
+            onOpenGovBilling={() => setIsGovBillingOpen(true)}
           />
         )}
 
@@ -298,6 +302,7 @@ export default function App() {
             onSaveInventoryItem={handleSaveInventoryItem}
             onViewReceipt={handleViewPOSReceipt}
             generateNextReceiptNumber={() => dbService.generateNextPOSReceiptNumber(posSales)}
+            onOpenGovBilling={() => setIsGovBillingOpen(true)}
           />
         )}
 
@@ -309,6 +314,7 @@ export default function App() {
             onSelectTicket={handleOpenEditTicket}
             onPrintTicket={handlePrintTicket}
             onViewPOSReceipt={handleViewPOSReceipt}
+            onOpenGovBilling={() => setIsGovBillingOpen(true)}
           />
         )}
       </main>
@@ -349,6 +355,14 @@ export default function App() {
         isOpen={isPOSReceiptOpen}
         onClose={() => setIsPOSReceiptOpen(false)}
         sale={selectedSaleToPrint}
+        shopSettings={shopSettings}
+      />
+
+      <GovConsolidatedBillingModal
+        isOpen={isGovBillingOpen}
+        onClose={() => setIsGovBillingOpen(false)}
+        tickets={tickets}
+        posSales={posSales}
         shopSettings={shopSettings}
       />
 

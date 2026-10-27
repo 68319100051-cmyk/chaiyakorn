@@ -20,7 +20,8 @@ import {
   ArrowRight,
   MessageSquare,
   Printer as PrintIcon,
-  ShoppingCart
+  ShoppingCart,
+  Building2
 } from 'lucide-react';
 
 interface DashboardProps {
@@ -34,6 +35,7 @@ interface DashboardProps {
   onLineNotify: (ticket: RepairTicket) => void;
   onViewAllTickets: () => void;
   onViewInventory: () => void;
+  onOpenGovBilling?: () => void;
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({
@@ -46,9 +48,22 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onPrintTicket,
   onLineNotify,
   onViewAllTickets,
-  onViewInventory
+  onViewInventory,
+  onOpenGovBilling
 }) => {
   const todayStr = new Date().toISOString().split('T')[0];
+
+  // Government Credit pending bills count & sum
+  const pendingGovTickets = tickets.filter(
+    t => t.paymentMethod === 'gov_credit' && t.govCreditInfo?.billingStatus !== 'paid'
+  );
+  const pendingGovSales = (posSales || []).filter(
+    s => s.paymentMethod === 'gov_credit' && s.govCreditInfo?.billingStatus !== 'paid'
+  );
+  const pendingGovBillsCount = pendingGovTickets.length + pendingGovSales.length;
+  const pendingGovAmount =
+    pendingGovTickets.reduce((sum, t) => sum + (t.totalAmount || 0), 0) +
+    pendingGovSales.reduce((sum, s) => sum + (s.totalAmount || 0), 0);
 
   // Calculated metrics
   const pendingCount = tickets.filter(t => t.status === 'pending').length;
@@ -123,6 +138,21 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 <span>ขายหน้าร้าน (POS)</span>
               </button>
             )}
+            {onOpenGovBilling && (
+              <button
+                onClick={onOpenGovBilling}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-semibold text-sm shadow-lg shadow-purple-600/30 transition-all active:scale-95 cursor-pointer"
+                title="รวมบิลวางบิลราชการอัตโนมัติตามเลขประจำตัวผู้เสียภาษี"
+              >
+                <Building2 className="w-4 h-4 text-purple-200" />
+                <span>รวมบิลวางบิลราชการ</span>
+                {pendingGovBillsCount > 0 && (
+                  <span className="bg-purple-800 text-white text-xs px-2 py-0.5 rounded-full font-bold">
+                    {pendingGovBillsCount}
+                  </span>
+                )}
+              </button>
+            )}
             <button
               onClick={onNewTicket}
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-500 to-cyan-500 text-white font-semibold text-sm shadow-lg shadow-blue-500/30 hover:from-blue-600 hover:to-cyan-600 transition-all active:scale-95 cursor-pointer"
@@ -140,6 +170,37 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Government Credit Billing Alert Banner */}
+      {pendingGovBillsCount > 0 && onOpenGovBilling && (
+        <div className="bg-gradient-to-r from-purple-900/20 via-indigo-900/15 to-purple-900/20 border border-purple-300 dark:border-purple-800/60 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm backdrop-blur-sm">
+          <div className="flex items-start sm:items-center gap-3">
+            <div className="p-3 bg-purple-600 text-white rounded-xl shadow-md shadow-purple-600/30 shrink-0">
+              <Building2 className="w-6 h-6" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-sm font-bold text-purple-900 dark:text-purple-200">
+                  มีรายการเครดิตราชการรอรวมบิลวางบิล
+                </span>
+                <span className="text-xs bg-purple-500/20 text-purple-700 dark:text-purple-300 px-2.5 py-0.5 rounded-full font-semibold border border-purple-400/30">
+                  {pendingGovBillsCount} บิล • รวม ฿{pendingGovAmount.toLocaleString()}
+                </span>
+              </div>
+              <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
+                ระบบจะตรวจสอบเลขประจำตัวผู้เสียภาษี 13 หลักที่ตรงกัน และรวมเป็นบิลเดียวพร้อมคำนวณยอดรวม, ตัวอักษรภาษาไทย, QR พร้อมเพย์ และช่องลงนาม 3 ฝ่ายให้ทันที
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onOpenGovBilling}
+            className="flex items-center gap-2 px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-xs sm:text-sm font-bold rounded-xl shadow-md shadow-purple-600/30 transition-all hover:scale-105 active:scale-95 shrink-0 cursor-pointer w-full sm:w-auto justify-center"
+          >
+            <span>เปิดหน้ารวมบิลวางบิล</span>
+            <ArrowRight className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* KPI Stats Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
