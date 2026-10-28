@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { RepairTicket, ShopSettings, STATUS_CONFIG, DEVICE_LABELS } from '../types';
 import { dbService } from '../services/db';
+import { calculateTicketWarranty } from '../utils/warranty';
 import {
   Search,
   CheckCircle2,
@@ -426,6 +427,79 @@ export const CustomerTrackingView: React.FC<CustomerTrackingViewProps> = ({
               </div>
             </div>
           </div>
+
+          {/* Warranty Certificate & Countdown Card */}
+          {(() => {
+            const warranty = ticket ? calculateTicketWarranty(ticket) : null;
+            if (!warranty || !warranty.hasWarranty || warranty.status === 'no_warranty') return null;
+
+            return (
+              <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-sky-50 dark:from-emerald-950/40 dark:via-teal-950/30 dark:to-sky-950/40 rounded-2xl p-5 border-2 border-emerald-300 dark:border-emerald-800 shadow-sm space-y-3">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white flex items-center justify-center font-bold shadow-xs">
+                      <ShieldCheck className="w-6 h-6 text-white" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-slate-900 dark:text-white text-sm">
+                        ใบรับประกันงานซ่อม (Repair Warranty Certificate)
+                      </h4>
+                      <p className="text-xs text-slate-600 dark:text-slate-400">
+                        {shopSettings.shopName} รับประกันงานซ่อมและอะไหล่แท้
+                      </p>
+                    </div>
+                  </div>
+                  <span className={`px-3 py-1 rounded-full text-xs font-black border ${warranty.badgeClass}`}>
+                    {warranty.badgeLabel}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-white/80 dark:bg-slate-900/80 p-3 rounded-xl border border-emerald-200 dark:border-emerald-800/80 text-xs">
+                  <div>
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold">ระยะเวลารับประกัน</span>
+                    <span className="font-bold text-emerald-800 dark:text-emerald-300 text-sm">
+                      {warranty.warrantyDays} วัน
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold">วันเริ่มต้นประกัน</span>
+                    <span className="font-semibold text-slate-800 dark:text-slate-200">
+                      {warranty.startDate || 'เริ่มนับเมื่อส่งมอบเครื่อง'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold">วันหมดอายุการรับประกัน</span>
+                    <span className="font-bold text-slate-900 dark:text-white font-mono">
+                      {warranty.expiryDate || '-'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Warranty Progress bar if active */}
+                {!warranty.isExpired && warranty.status !== 'pending_delivery' && (
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-[11px] text-slate-600 dark:text-slate-400 font-medium">
+                      <span>ความคุ้มครองที่ผ่านมา: {warranty.progressPercent}%</span>
+                      <span className="font-bold text-emerald-700 dark:text-emerald-300">
+                        เหลือระยะเวลารับประกันอีก {warranty.daysRemaining} วัน
+                      </span>
+                    </div>
+                    <div className="w-full bg-slate-200 dark:bg-slate-700 h-2 rounded-full overflow-hidden">
+                      <div
+                        className="bg-gradient-to-r from-emerald-500 to-teal-500 h-full transition-all duration-500 rounded-full"
+                        style={{ width: `${Math.max(0, 100 - warranty.progressPercent)}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="text-[11px] text-slate-600 dark:text-slate-400 bg-emerald-100/50 dark:bg-emerald-950/20 p-2.5 rounded-lg border border-emerald-200/60 dark:border-emerald-900/40">
+                  <span className="font-bold text-slate-700 dark:text-slate-300">เงื่อนไขการรับประกัน: </span>
+                  ครอบคลุมอาการเสียเดิมที่ได้รับการซ่อมแซมและอะไหล่ที่เปลี่ยน หากพบปัญหาเดิมภายในระยะเวลาประกัน สามารถนำเครื่องกลับมาให้ช่างดูแลได้ฟรีโดยไม่มีค่าแรงเพิ่มเติม
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Shop Contact Card */}
           <div className="bg-slate-900 text-white rounded-2xl p-5 shadow-lg border border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4">

@@ -1,4 +1,5 @@
 import { RepairTicket, POSSaleRecord, DeviceType, GovCreditInfo } from '../types';
+import { calculateTicketWarranty, WarrantyCalculationResult } from './warranty';
 
 export interface CustomerDeviceHistory {
   deviceType: DeviceType;
@@ -10,6 +11,11 @@ export interface CustomerDeviceHistory {
   problemDescription?: string;
   ticketNumber: string;
   ticketDate: string;
+  deliveredDate?: string;
+  technicianName?: string;
+  warrantyCalculation?: WarrantyCalculationResult;
+  isUnderWarranty?: boolean;
+  warrantyDaysRemaining?: number;
 }
 
 export interface ReturningCustomerProfile {
@@ -28,9 +34,10 @@ export interface ReturningCustomerProfile {
 
 export interface CustomerSearchResult {
   customer: ReturningCustomerProfile;
-  matchedField: 'name' | 'phone' | 'model' | 'serial';
+  matchedField: 'name' | 'phone' | 'model' | 'serial' | 'recent';
   matchedValue: string;
   suggestedDevice?: CustomerDeviceHistory;
+  score: number; // Higher is better match
 }
 
 /**
@@ -41,6 +48,11 @@ export function normalizePhone(phone: string): string {
 }
 
 /**
+ * Common prefixes in Thai customer names
+ */
+const THAI_PREFIX_REGEX = /^(คุณ|นาย|นาง|นางสาว|ด\.ช\.|ด\.ญ\.|ช่าง|อาจารย์|ผอ\.|ครู|หจก\.|บจก\.|บริษัท|สำนักงาน|โรงเรียน|อบต\.|เทศบาล|รพ\.สต\.)\s*/i;
+
+/**
  * Normalizes Thai names for comparison: trims, removes common honorific prefixes
  */
 export function normalizeName(name: string): string {
@@ -48,7 +60,32 @@ export function normalizeName(name: string): string {
   return name
     .toLowerCase()
     .trim()
-    .replace(/^(คุณ|นาย|นาง|นางสาว|ด\.ช\.|ด\.ญ\.|ช่าง|อาจารย์|ผอ\.|ครู)\s*/i, '');
+    .replace(THAI_PREFIX_REGEX, '');
+}
+
+/**
+ * Extracts words/tokens from a name or text for multi-token prefix matching
+ * e.g. "หจก. พัทลุงก่อสร้างและบริการ (คุณพรทิพย์)" -> ["หจก", "พัทลุงก่อสร้างและบริการ", "คุณพรทิพย์", "พรทิพย์"]
+ */
+export function extractSearchTokens(text: string): string[] {
+  if (!text) return [];
+  const raw = text.toLowerCase();
+  const tokens = new Set<string>();
+
+  // Full raw and normalized
+  tokens.add(raw.trim());
+  const norm = normalizeName(text);
+  if (norm) tokens.add(norm);
+
+  // Split by whitespace, parentheses, brackets, dots, commas, hyphens, slashes
+  const parts = raw.split(/[\s\(\)\[\]\.\,\-\/\\]+/).filter(Boolean);
+  for (const p of parts) {
+    tokens.add(p);
+    const pNorm = normalizeName(p);
+    if (pNorm) tokens.add(pNorm);
+  }
+
+  return Array.from(tokens);
 }
 
 /**
@@ -72,10 +109,11 @@ export function buildCustomerProfiles(
 
     const cleanPhone = normalizePhone(t.customerPhone);
     const cleanName = (t.customerName || '').trim();
-    // Unique key: prefer phone if at least 9 digits, otherwise clean name
     const profileKey = cleanPhone.length >= 9 ? `phone-${cleanPhone}` : `name-${cleanName.toLowerCase()}`;
 
     const existing = profileMap.get(profileKey);
+
+    const warrantyCalc = calculateTicketWarranty(t);
 
     const deviceEntry: CustomerDeviceHistory = {
       deviceType: t.deviceType || 'printer',
@@ -86,7 +124,12 @@ export function buildCustomerProfiles(
       accessories: t.accessories || [],
       problemDescription: t.problemDescription || '',
       ticketNumber: t.ticketNumber,
-      ticketDate: t.receivedDate || t.createdAt?.split('T')[0] || ''
+      ticketDate: t.receivedDate || t.createdAt?.split('T')[0] || '',
+      deliveredDate: t.deliveredDate,
+      technicianName: t.technicianName,
+      warrantyCalculation: warrantyCalc,
+      isUnderWarranty: !warrantyCalc.isExpired && (warrantyCalc.status === 'active' || warrantyCalc.status === 'expiring_soon'),
+      warrantyDaysRemaining: warrantyCalc.daysRemaining
     };
 
     if (existing) {
@@ -97,7 +140,7 @@ export function buildCustomerProfiles(
       if (t.customerAddress) existing.customerAddress = t.customerAddress;
       if (t.govCreditInfo) existing.govCreditInfo = t.govCreditInfo;
 
-      // Add device if not already recorded with the same model and serial
+      // Add device if not duplicate
       const duplicateDevice = existing.devices.some(
         d => d.model.toLowerCase() === deviceEntry.model.toLowerCase() &&
              d.serialNumber === deviceEntry.serialNumber
@@ -166,10 +209,11 @@ export function buildCustomerProfiles(
 
 /**
  * Searches for matching returning customers based on:
- * - Customer Name (starts with or includes)
+ * - Customer Name (starts with, word starts with, or includes — supports 1-char queries like "ป" or "ก")
  * - Customer Phone (digits start with or includes)
  * - Device Model (starts with or includes)
  * - Serial Number (starts with or includes)
+ * If query is empty: returns recent customers for instant pick!
  */
 export function searchReturningCustomers(
   profiles: ReturningCustomerProfile[],
@@ -177,7 +221,17 @@ export function searchReturningCustomers(
   targetField?: 'name' | 'phone' | 'model' | 'all'
 ): CustomerSearchResult[] {
   const rawQ = (query || '').trim();
-  if (rawQ.length < 2) return [];
+
+  // If query is empty, return top recent customers so user can pick immediately when focusing an empty field!
+  if (rawQ.length === 0) {
+    return profiles.slice(0, 6).map(profile => ({
+      customer: profile,
+      matchedField: 'recent',
+      matchedValue: profile.customerName,
+      suggestedDevice: profile.devices[0],
+      score: 10
+    }));
+  }
 
   const lowerQ = rawQ.toLowerCase();
   const cleanQPhone = normalizePhone(rawQ);
@@ -186,91 +240,149 @@ export function searchReturningCustomers(
   const results: CustomerSearchResult[] = [];
 
   for (const profile of profiles) {
+    let score = 0;
     let matchedField: 'name' | 'phone' | 'model' | 'serial' | null = null;
     let matchedValue = '';
     let suggestedDevice: CustomerDeviceHistory | undefined = undefined;
 
     const profileRawName = profile.customerName.toLowerCase();
-    const profileNormName = normalizeName(profile.customerName);
     const profileCleanPhone = normalizePhone(profile.customerPhone);
+    const nameTokens = extractSearchTokens(profile.customerName);
 
-    // 1. Check Phone (if searching phone or all)
-    if ((!targetField || targetField === 'phone' || targetField === 'all') && cleanQPhone.length >= 2) {
-      if (profileCleanPhone.includes(cleanQPhone)) {
+    // 1. Phone matching
+    if ((!targetField || targetField === 'phone' || targetField === 'all') && cleanQPhone.length >= 1) {
+      if (profileCleanPhone.startsWith(cleanQPhone)) {
+        score = 100 + (10 - profileCleanPhone.indexOf(cleanQPhone));
+        matchedField = 'phone';
+        matchedValue = profile.customerPhone;
+      } else if (profileCleanPhone.includes(cleanQPhone)) {
+        score = 60;
         matchedField = 'phone';
         matchedValue = profile.customerPhone;
       }
     }
 
-    // 2. Check Name (if searching name or all, or not yet matched)
-    if (!matchedField && (!targetField || targetField === 'name' || targetField === 'all')) {
-      if (
-        profileRawName.includes(lowerQ) ||
-        (normalizedQName.length >= 2 && profileNormName.includes(normalizedQName)) ||
-        profileRawName.startsWith(lowerQ) ||
-        profileNormName.startsWith(normalizedQName)
-      ) {
+    // 2. Name matching (even 1 letter like "ป", "ก", "ส")
+    if (!targetField || targetField === 'name' || targetField === 'all') {
+      let nameScore = 0;
+
+      // Prefix match on full name or tokens (highest rank)
+      if (profileRawName.startsWith(lowerQ)) {
+        nameScore = 120;
+      } else if (nameTokens.some(tok => tok.startsWith(lowerQ) || (normalizedQName && tok.startsWith(normalizedQName)))) {
+        nameScore = 110;
+      } else if (profileRawName.includes(lowerQ) || (normalizedQName && profileRawName.includes(normalizedQName))) {
+        nameScore = 70;
+      }
+
+      if (nameScore > score) {
+        score = nameScore;
         matchedField = 'name';
         matchedValue = profile.customerName;
       }
     }
 
-    // 3. Check Model (if searching model or all, or not yet matched)
-    if (!matchedField && (!targetField || targetField === 'model' || targetField === 'all')) {
-      const foundDevice = profile.devices.find(d =>
-        d.model.toLowerCase().includes(lowerQ) ||
-        d.brand.toLowerCase().includes(lowerQ)
-      );
-      if (foundDevice) {
-        matchedField = 'model';
-        matchedValue = `${foundDevice.brand} ${foundDevice.model}`;
-        suggestedDevice = foundDevice;
+    // 3. Model & Brand matching
+    if (!targetField || targetField === 'model' || targetField === 'all') {
+      for (const dev of profile.devices) {
+        const devModel = dev.model.toLowerCase();
+        const devBrand = dev.brand.toLowerCase();
+        let modelScore = 0;
+
+        if (devModel.startsWith(lowerQ) || devBrand.startsWith(lowerQ)) {
+          modelScore = 115;
+        } else if (devModel.includes(lowerQ) || devBrand.includes(lowerQ)) {
+          modelScore = 65;
+        }
+
+        if (modelScore > score) {
+          score = modelScore;
+          matchedField = 'model';
+          matchedValue = `${dev.brand} ${dev.model}`;
+          suggestedDevice = dev;
+        }
       }
     }
 
-    // 4. Check Serial Number
-    if (!matchedField && (!targetField || targetField === 'all')) {
-      const foundDevice = profile.devices.find(d =>
-        d.serialNumber && d.serialNumber.toLowerCase().includes(lowerQ)
-      );
-      if (foundDevice) {
-        matchedField = 'serial';
-        matchedValue = `S/N: ${foundDevice.serialNumber}`;
-        suggestedDevice = foundDevice;
+    // 4. Serial number matching
+    if (!targetField || targetField === 'all') {
+      for (const dev of profile.devices) {
+        if (dev.serialNumber) {
+          const sn = dev.serialNumber.toLowerCase();
+          if (sn.startsWith(lowerQ)) {
+            if (110 > score) {
+              score = 110;
+              matchedField = 'serial';
+              matchedValue = `S/N: ${dev.serialNumber}`;
+              suggestedDevice = dev;
+            }
+          } else if (sn.includes(lowerQ)) {
+            if (60 > score) {
+              score = 60;
+              matchedField = 'serial';
+              matchedValue = `S/N: ${dev.serialNumber}`;
+              suggestedDevice = dev;
+            }
+          }
+        }
       }
     }
 
-    if (matchedField) {
+    if (matchedField && score > 0) {
       results.push({
         customer: profile,
         matchedField,
         matchedValue,
-        suggestedDevice: suggestedDevice || profile.devices[0]
+        suggestedDevice: suggestedDevice || profile.devices[0],
+        score
       });
     }
   }
 
-  // Sort results: exact / prefix matches first, then by total visits descending
+  // Sort results: highest match score first, then by total visits descending
   return results.sort((a, b) => {
-    // If targetField is specified, prioritize prefix match on that field
-    if (targetField === 'name') {
-      const aStarts = normalizeName(a.customer.customerName).startsWith(normalizedQName);
-      const bStarts = normalizeName(b.customer.customerName).startsWith(normalizedQName);
-      if (aStarts && !bStarts) return -1;
-      if (!aStarts && bStarts) return 1;
-    } else if (targetField === 'phone') {
-      const aStarts = normalizePhone(a.customer.customerPhone).startsWith(cleanQPhone);
-      const bStarts = normalizePhone(b.customer.customerPhone).startsWith(cleanQPhone);
-      if (aStarts && !bStarts) return -1;
-      if (!aStarts && bStarts) return 1;
-    } else if (targetField === 'model') {
-      const aModel = a.suggestedDevice?.model.toLowerCase() || '';
-      const bModel = b.suggestedDevice?.model.toLowerCase() || '';
-      const aStarts = aModel.startsWith(lowerQ);
-      const bStarts = bModel.startsWith(lowerQ);
-      if (aStarts && !bStarts) return -1;
-      if (!aStarts && bStarts) return 1;
-    }
+    if (b.score !== a.score) return b.score - a.score;
     return b.customer.totalVisits - a.customer.totalVisits;
   });
+}
+
+/**
+ * Searches distinct historical values for any text input field
+ * (e.g. addresses, LINE IDs, technician names, problem descriptions, etc.)
+ */
+export function searchHistoricalFieldValues(
+  tickets: RepairTicket[] = [],
+  field: 'customerAddress' | 'customerLineId' | 'technicianName' | 'problemDescription' | 'serialNumber' | 'color',
+  query: string
+): string[] {
+  const rawQ = (query || '').trim().toLowerCase();
+  const values = new Set<string>();
+
+  for (const t of tickets) {
+    const val = (t[field] as string | undefined || '').trim();
+    if (val && val.length > 0) {
+      values.add(val);
+    }
+  }
+
+  const allList = Array.from(values);
+
+  if (!rawQ) {
+    return allList.slice(0, 6);
+  }
+
+  // Prefix match first, then includes
+  const prefixMatches: string[] = [];
+  const includeMatches: string[] = [];
+
+  for (const item of allList) {
+    const lower = item.toLowerCase();
+    if (lower.startsWith(rawQ)) {
+      prefixMatches.push(item);
+    } else if (lower.includes(rawQ)) {
+      includeMatches.push(item);
+    }
+  }
+
+  return [...prefixMatches, ...includeMatches].slice(0, 6);
 }

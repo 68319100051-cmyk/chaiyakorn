@@ -52,6 +52,11 @@ export interface RepairTicket {
   estimatedCompletionDate?: string;   // วันที่คาดว่าจะเสร็จ
   completedDate?: string;             // วันที่ซ่อมเสร็จ
   deliveredDate?: string;             // วันที่ส่งมอบเครื่อง
+  warrantyDays?: number;              // จำนวนวันรับประกันงานซ่อม (เช่น 0, 7, 15, 30, 60, 90, 180, 365)
+  warrantyExpiryDate?: string;        // วันที่หมดประกัน (YYYY-MM-DD)
+  isWarrantyClaim?: boolean;          // งานนี้เป็นการเคลมประกันต่อเนื่องจากงานเดิมหรือไม่
+  originalTicketNumber?: string;      // เลขที่ใบรับซ่อมเดิมที่ส่งเคลม
+  warrantyClaimNotes?: string;        // หมายเหตุงานเคลมประกัน
   createdAt: string;
   updatedAt: string;
 }
@@ -98,6 +103,8 @@ export interface POSCartItem {
 
 export type GovBillingStatus = 'pending_billing' | 'billed' | 'paid';
 
+export type GovDocumentType = 'quotation' | 'invoice' | 'receipt' | 'work_order';
+
 export interface GovCreditInfo {
   agencyName: string;            // ชื่อหน่วยงานราชการ / โรงเรียน / อบต. / เทศบาล
   taxId?: string;                // เลขประจำตัวผู้เสียภาษีหน่วยงาน 13 หลัก
@@ -109,8 +116,13 @@ export interface GovCreditInfo {
   dueDate: string;               // วันครบกำหนดชำระเงิน (YYYY-MM-DD)
   billingStatus: GovBillingStatus; // สถานะการวางบิล: 'pending_billing' (รอวางบิล) | 'billed' (วางบิลแล้ว) | 'paid' (เบิกจ่ายแล้ว)
   billedDate?: string;           // วันที่วางบิลจริง
-  paidDate?: string;             // วันที่ได้รับเงินเบิกจ่าย
+  paidDate?: string;             // วันที่ได้รับเงินเบิกจ่าย / เงินโอนเข้า
   notes?: string;                // หมายเหตุโครงการ / เลขที่เบิกเงิน
+  disbursementNumber?: string;   // เลขที่ฎีกาเบิกจ่าย เช่น "ฎีกาที่ 124/2569" หรือ "ฎีกา อว 0602/..."
+  disbursementDate?: string;     // วันที่ทำเรื่องฎีกาเบิกจ่าย
+  transferRef?: string;          // เลขที่อ้างอิงการโอนเงิน / เลขที่เช็ค
+  quotationNumber?: string;      // เลขที่ใบเสนอราคา (ถ้ามี เช่น QT-20261028-001)
+  invoiceNumber?: string;        // เลขที่ใบแจ้งหนี้ (ถ้ามี เช่น INV-20261028-001)
 }
 
 export interface POSSaleRecord {

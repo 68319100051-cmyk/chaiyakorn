@@ -11,10 +11,17 @@ import {
 import {
   buildCustomerProfiles,
   searchReturningCustomers,
+  searchHistoricalFieldValues,
   ReturningCustomerProfile,
   CustomerDeviceHistory,
   normalizePhone
 } from '../utils/customerLookup';
+import {
+  checkActiveWarranty,
+  calculateTicketWarranty,
+  WARRANTY_PRESETS,
+  ActiveWarrantyMatch
+} from '../utils/warranty';
 import {
   X,
   Plus,
@@ -37,7 +44,10 @@ import {
   RotateCcw,
   CheckCircle2,
   Layers,
-  ChevronRight
+  ChevronRight,
+  Shield,
+  ShieldCheck,
+  ShieldAlert
 } from 'lucide-react';
 
 interface TicketFormModalProps {
@@ -132,6 +142,13 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
   const [govOrderNumber, setGovOrderNumber] = useState<string>('');
   const [govCreditDays, setGovCreditDays] = useState<number>(30);
 
+  // Warranty & Claim State
+  const [warrantyDays, setWarrantyDays] = useState<number>(30);
+  const [isWarrantyClaim, setIsWarrantyClaim] = useState<boolean>(false);
+  const [originalTicketNumber, setOriginalTicketNumber] = useState<string>('');
+  const [warrantyClaimNotes, setWarrantyClaimNotes] = useState<string>('');
+  const [dismissWarrantyAlert, setDismissWarrantyAlert] = useState<boolean>(false);
+
   // Parts Used State
   const [partsUsed, setPartsUsed] = useState<UsedPart[]>([]);
   const [initialPartsUsed, setInitialPartsUsed] = useState<UsedPart[]>([]);
@@ -143,14 +160,30 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
   const [selectedReturningCustomer, setSelectedReturningCustomer] = useState<ReturningCustomerProfile | null>(null);
   const [showNameSuggestions, setShowNameSuggestions] = useState(false);
   const [showPhoneSuggestions, setShowPhoneSuggestions] = useState(false);
+  const [showLineSuggestions, setShowLineSuggestions] = useState(false);
+  const [showAddressSuggestions, setShowAddressSuggestions] = useState(false);
   const [showModelSuggestions, setShowModelSuggestions] = useState(false);
+  const [showSerialSuggestions, setShowSerialSuggestions] = useState(false);
+  const [showProblemSuggestions, setShowProblemSuggestions] = useState(false);
+  const [showTechnicianSuggestions, setShowTechnicianSuggestions] = useState(false);
+  const [showGovAgencySuggestions, setShowGovAgencySuggestions] = useState(false);
+  const [showGovTaxIdSuggestions, setShowGovTaxIdSuggestions] = useState(false);
+  const [showGovDeptSuggestions, setShowGovDeptSuggestions] = useState(false);
   const [showLookupDropdown, setShowLookupDropdown] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // References for outside click dismissal
   const nameInputWrapperRef = useRef<HTMLDivElement>(null);
   const phoneInputWrapperRef = useRef<HTMLDivElement>(null);
+  const lineInputWrapperRef = useRef<HTMLDivElement>(null);
+  const addressInputWrapperRef = useRef<HTMLDivElement>(null);
   const modelInputWrapperRef = useRef<HTMLDivElement>(null);
+  const serialInputWrapperRef = useRef<HTMLDivElement>(null);
+  const problemInputWrapperRef = useRef<HTMLDivElement>(null);
+  const technicianInputWrapperRef = useRef<HTMLDivElement>(null);
+  const govAgencyInputWrapperRef = useRef<HTMLDivElement>(null);
+  const govTaxIdInputWrapperRef = useRef<HTMLDivElement>(null);
+  const govDeptInputWrapperRef = useRef<HTMLDivElement>(null);
   const lookupInputWrapperRef = useRef<HTMLDivElement>(null);
 
   // Close suggestions on outside click
@@ -163,8 +196,32 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
       if (phoneInputWrapperRef.current && !phoneInputWrapperRef.current.contains(target)) {
         setShowPhoneSuggestions(false);
       }
+      if (lineInputWrapperRef.current && !lineInputWrapperRef.current.contains(target)) {
+        setShowLineSuggestions(false);
+      }
+      if (addressInputWrapperRef.current && !addressInputWrapperRef.current.contains(target)) {
+        setShowAddressSuggestions(false);
+      }
       if (modelInputWrapperRef.current && !modelInputWrapperRef.current.contains(target)) {
         setShowModelSuggestions(false);
+      }
+      if (serialInputWrapperRef.current && !serialInputWrapperRef.current.contains(target)) {
+        setShowSerialSuggestions(false);
+      }
+      if (problemInputWrapperRef.current && !problemInputWrapperRef.current.contains(target)) {
+        setShowProblemSuggestions(false);
+      }
+      if (technicianInputWrapperRef.current && !technicianInputWrapperRef.current.contains(target)) {
+        setShowTechnicianSuggestions(false);
+      }
+      if (govAgencyInputWrapperRef.current && !govAgencyInputWrapperRef.current.contains(target)) {
+        setShowGovAgencySuggestions(false);
+      }
+      if (govTaxIdInputWrapperRef.current && !govTaxIdInputWrapperRef.current.contains(target)) {
+        setShowGovTaxIdSuggestions(false);
+      }
+      if (govDeptInputWrapperRef.current && !govDeptInputWrapperRef.current.contains(target)) {
+        setShowGovDeptSuggestions(false);
       }
       if (lookupInputWrapperRef.current && !lookupInputWrapperRef.current.contains(target)) {
         setShowLookupDropdown(false);
@@ -179,28 +236,90 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
     return buildCustomerProfiles(allTickets, posSales);
   }, [allTickets, posSales]);
 
-  // Suggestions for Customer Name input
+  // Suggestions for Customer Name input (supports from 1 character or empty for recent)
   const nameSuggestions = useMemo(() => {
-    if (!customerName || customerName.trim().length < 2) return [];
-    return searchReturningCustomers(customerProfiles, customerName, 'name').slice(0, 6);
+    return searchReturningCustomers(customerProfiles, customerName, 'name').slice(0, 8);
   }, [customerProfiles, customerName]);
 
-  // Suggestions for Customer Phone input
+  // Suggestions for Customer Phone input (supports from 1 digit or empty for recent)
   const phoneSuggestions = useMemo(() => {
-    const cleanDigits = normalizePhone(customerPhone);
-    if (cleanDigits.length < 2) return [];
-    return searchReturningCustomers(customerProfiles, customerPhone, 'phone').slice(0, 6);
+    return searchReturningCustomers(customerProfiles, customerPhone, 'phone').slice(0, 8);
   }, [customerProfiles, customerPhone]);
 
-  // Suggestions for Model input
+  // Suggestions for Model input (supports from 1 character or empty for recent)
   const modelSuggestions = useMemo(() => {
-    if (!model || model.trim().length < 2) return [];
-    return searchReturningCustomers(customerProfiles, model, 'model').slice(0, 6);
+    return searchReturningCustomers(customerProfiles, model, 'model').slice(0, 8);
   }, [customerProfiles, model]);
+
+  // Suggestions for LINE ID
+  const lineSuggestions = useMemo(() => {
+    return searchHistoricalFieldValues(allTickets, 'customerLineId', customerLineId);
+  }, [allTickets, customerLineId]);
+
+  // Suggestions for Customer Address
+  const addressSuggestions = useMemo(() => {
+    return searchHistoricalFieldValues(allTickets, 'customerAddress', customerAddress);
+  }, [allTickets, customerAddress]);
+
+  // Suggestions for Serial Number
+  const serialSuggestions = useMemo(() => {
+    return searchHistoricalFieldValues(allTickets, 'serialNumber', serialNumber);
+  }, [allTickets, serialNumber]);
+
+  // Suggestions for Problem Description
+  const problemSuggestions = useMemo(() => {
+    return searchHistoricalFieldValues(allTickets, 'problemDescription', problemDescription);
+  }, [allTickets, problemDescription]);
+
+  // Suggestions for Technician Name
+  const technicianSuggestions = useMemo(() => {
+    return searchHistoricalFieldValues(allTickets, 'technicianName', technicianName);
+  }, [allTickets, technicianName]);
+
+  // Suggestions for Government Agency Name
+  const govAgencySuggestions = useMemo(() => {
+    const values = new Set<string>();
+    allTickets.forEach(t => {
+      if (t.govCreditInfo?.agencyName) values.add(t.govCreditInfo.agencyName);
+    });
+    posSales.forEach(s => {
+      if (s.govCreditInfo?.agencyName) values.add(s.govCreditInfo.agencyName);
+    });
+    const list = Array.from(values);
+    if (!govAgencyName.trim()) return list.slice(0, 6);
+    return list.filter(v => v.toLowerCase().includes(govAgencyName.trim().toLowerCase())).slice(0, 6);
+  }, [allTickets, posSales, govAgencyName]);
+
+  // Suggestions for Government Tax ID
+  const govTaxIdSuggestions = useMemo(() => {
+    const values = new Set<string>();
+    allTickets.forEach(t => {
+      if (t.govCreditInfo?.taxId) values.add(t.govCreditInfo.taxId);
+    });
+    posSales.forEach(s => {
+      if (s.govCreditInfo?.taxId) values.add(s.govCreditInfo.taxId);
+    });
+    const list = Array.from(values);
+    if (!govTaxId.trim()) return list.slice(0, 6);
+    return list.filter(v => v.includes(govTaxId.trim())).slice(0, 6);
+  }, [allTickets, posSales, govTaxId]);
+
+  // Suggestions for Government Department
+  const govDeptSuggestions = useMemo(() => {
+    const values = new Set<string>(['งานพัสดุ', 'กองคลัง', 'ฝ่ายบริหารงานทั่วไป', 'กลุ่มงานสารสนเทศ']);
+    allTickets.forEach(t => {
+      if (t.govCreditInfo?.department) values.add(t.govCreditInfo.department);
+    });
+    posSales.forEach(s => {
+      if (s.govCreditInfo?.department) values.add(s.govCreditInfo.department);
+    });
+    const list = Array.from(values);
+    if (!govDepartment.trim()) return list.slice(0, 6);
+    return list.filter(v => v.toLowerCase().includes(govDepartment.trim().toLowerCase())).slice(0, 6);
+  }, [allTickets, posSales, govDepartment]);
 
   // Suggestions for General Quick Lookup Bar
   const generalLookupSuggestions = useMemo(() => {
-    if (!activeLookupQuery || activeLookupQuery.trim().length < 2) return [];
     return searchReturningCustomers(customerProfiles, activeLookupQuery, 'all').slice(0, 8);
   }, [customerProfiles, activeLookupQuery]);
 
@@ -262,6 +381,41 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
     setTimeout(() => setToastMessage(null), 3500);
   };
 
+  // Real-time Active Warranty Match Detection
+  const activeWarrantyMatch = useMemo<ActiveWarrantyMatch | null>(() => {
+    if (dismissWarrantyAlert || isWarrantyClaim) return null;
+    return checkActiveWarranty(allTickets, {
+      customerPhone,
+      customerName,
+      serialNumber,
+      model,
+      brand,
+      excludeTicketId: ticketToEdit?.id
+    });
+  }, [allTickets, customerPhone, customerName, serialNumber, model, brand, ticketToEdit, dismissWarrantyAlert, isWarrantyClaim]);
+
+  // Apply 1-click Free Warranty Claim
+  const handleApplyWarrantyClaim = (match: ActiveWarrantyMatch) => {
+    setIsWarrantyClaim(true);
+    setOriginalTicketNumber(match.ticket.ticketNumber);
+    setLaborCostInput('0');
+    setDiscountInput('0');
+    if (!problemDescription.startsWith('[งานเคลมประกัน')) {
+      const claimPrefix = `[งานเคลมประกันจาก ${match.ticket.ticketNumber}] `;
+      setProblemDescription(claimPrefix + (problemDescription ? problemDescription : `อาการเดิม: ${match.ticket.problemDescription}`));
+    }
+    setToastMessage(`🛡️ ตั้งค่าเป็นงานเคลมประกันจาก ${match.ticket.ticketNumber} ฟรีค่าแรง (0 บาท) เรียบร้อย`);
+    setTimeout(() => setToastMessage(null), 4000);
+  };
+
+  const handleCancelWarrantyClaim = () => {
+    setIsWarrantyClaim(false);
+    setOriginalTicketNumber('');
+    setLaborCostInput('300');
+    setToastMessage('ยกเลิกงานเคลมประกัน กลับสู่การคิดค่าบริการปกติ');
+    setTimeout(() => setToastMessage(null), 3000);
+  };
+
   const handleClearReturningCustomer = () => {
     setSelectedReturningCustomer(null);
     setCustomerName('');
@@ -275,6 +429,9 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
     setGovAgencyName('');
     setGovTaxId('');
     setPaymentMethod('unpaid');
+    setIsWarrantyClaim(false);
+    setOriginalTicketNumber('');
+    setDismissWarrantyAlert(false);
   };
 
   // Initialize form
@@ -307,6 +464,13 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
       setEstimatedCompletionDate(ticketToEdit.estimatedCompletionDate || '');
       setPartsUsed(ticketToEdit.partsUsed || []);
       setInitialPartsUsed(ticketToEdit.partsUsed || []);
+
+      // Warranty & Claim
+      setWarrantyDays(ticketToEdit.warrantyDays !== undefined ? ticketToEdit.warrantyDays : 30);
+      setIsWarrantyClaim(Boolean(ticketToEdit.isWarrantyClaim));
+      setOriginalTicketNumber(ticketToEdit.originalTicketNumber || '');
+      setWarrantyClaimNotes(ticketToEdit.warrantyClaimNotes || '');
+      setDismissWarrantyAlert(Boolean(ticketToEdit.isWarrantyClaim));
 
       // Gov Credit Info
       setGovAgencyName(ticketToEdit.govCreditInfo?.agencyName || '');
@@ -345,6 +509,13 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
       setEstimatedCompletionDate(tomorrow.toISOString().split('T')[0]);
       setPartsUsed([]);
       setInitialPartsUsed([]);
+
+      // Reset Warranty
+      setWarrantyDays(30);
+      setIsWarrantyClaim(false);
+      setOriginalTicketNumber('');
+      setWarrantyClaimNotes('');
+      setDismissWarrantyAlert(false);
 
       // Reset Gov Credit Info
       setGovAgencyName('');
@@ -496,6 +667,18 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
       deliveredDate: status === 'completed'
         ? (ticketToEdit?.deliveredDate || new Date().toISOString().split('T')[0])
         : '',
+      warrantyDays: Number(warrantyDays) >= 0 ? Number(warrantyDays) : 30,
+      warrantyExpiryDate: (() => {
+        const wDays = Number(warrantyDays) >= 0 ? Number(warrantyDays) : 30;
+        if (wDays <= 0) return '';
+        const baseDateStr = (status === 'completed' ? (ticketToEdit?.deliveredDate || new Date().toISOString().split('T')[0]) : receivedDate) || new Date().toISOString().split('T')[0];
+        const d = new Date(baseDateStr);
+        d.setDate(d.getDate() + wDays);
+        return d.toISOString().split('T')[0];
+      })(),
+      isWarrantyClaim: Boolean(isWarrantyClaim),
+      originalTicketNumber: isWarrantyClaim ? (originalTicketNumber.trim() || undefined) : undefined,
+      warrantyClaimNotes: isWarrantyClaim ? (warrantyClaimNotes.trim() || undefined) : undefined,
       createdAt: ticketToEdit?.createdAt || now,
       updatedAt: now
     };
@@ -608,22 +791,20 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
                       <Sparkles className="w-3.5 h-3.5 text-blue-500" />
                       <span>พบประวัติลูกค้าเก่า ({generalLookupSuggestions.length} รายการ)</span>
                     </span>
-                    <span className="text-[10px] text-slate-500">คลิกเพื่อเลือกและดึงข้อมูลลงฟอร์ม</span>
+                    <span className="text-[10px] text-slate-500">เลือก: ใส่เฉพาะข้อมูล หรือ ดึงทั้งหมด</span>
                   </div>
-                  <div className="max-h-64 overflow-y-auto">
+                  <div className="max-h-64 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-700/60">
                     {generalLookupSuggestions.map(res => (
-                      <button
+                      <div
                         key={res.customer.key}
-                        type="button"
-                        onClick={() => handleSelectCustomerProfile(res.customer, res.suggestedDevice)}
-                        className="w-full text-left px-3.5 py-2.5 hover:bg-blue-50/80 dark:hover:bg-slate-700/70 transition-colors flex items-center justify-between gap-3 cursor-pointer group"
+                        className="w-full text-left px-3.5 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-700/60 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-2"
                       >
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-bold text-slate-800 dark:text-white text-xs">
                               {res.customer.customerName}
                             </span>
-                            <span className="font-mono text-[11px] text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950 px-1.5 py-0.2 rounded">
+                            <span className="font-mono text-[11px] text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950 px-1.5 py-0.2 rounded font-semibold">
                               {res.customer.customerPhone}
                             </span>
                             <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-semibold">
@@ -631,22 +812,52 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
                             </span>
                           </div>
                           {res.suggestedDevice && (
-                            <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5 mt-0.5">
+                            <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5 flex-wrap mt-0.5">
                               <span className="text-purple-600 dark:text-purple-400 font-semibold">
                                 {res.suggestedDevice.brand} {res.suggestedDevice.model}
                               </span>
                               {res.suggestedDevice.serialNumber && (
                                 <span>(S/N: {res.suggestedDevice.serialNumber})</span>
                               )}
+                              {res.suggestedDevice.isUnderWarranty && (
+                                <span className="text-[10px] px-1.5 py-0.2 rounded-full font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-800 flex items-center gap-0.5">
+                                  <ShieldCheck className="w-2.5 h-2.5 text-emerald-600" />
+                                  <span>ในประกัน ({res.suggestedDevice.warrantyDaysRemaining} วัน)</span>
+                                </span>
+                              )}
                               <span>• ล่าสุด: {res.customer.latestVisitDate}</span>
                             </div>
                           )}
                         </div>
-                        <div className="shrink-0 flex items-center gap-1 px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[11px] font-bold shadow-xs group-hover:scale-105 transition-all">
-                          <span>ดึงข้อมูล</span>
-                          <ArrowRight className="w-3 h-3" />
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {/* Option 1: ใส่เฉพาะชื่อ+เบอร์ */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCustomerName(res.customer.customerName);
+                              setCustomerPhone(res.customer.customerPhone);
+                              setShowLookupDropdown(false);
+                              setActiveLookupQuery('');
+                              setToastMessage(`ใส่ชื่อและเบอร์ "${res.customer.customerName}" เรียบร้อยแล้ว`);
+                              setTimeout(() => setToastMessage(null), 3000);
+                            }}
+                            title="ใส่เฉพาะชื่อและเบอร์โทร ไม่เปลี่ยนข้อมูลเครื่องหรือช่องอื่น"
+                            className="px-2.5 py-1 rounded-lg text-[10px] font-semibold bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600 transition-colors cursor-pointer"
+                          >
+                            ใส่เฉพาะชื่อ+เบอร์
+                          </button>
+                          {/* Option 2: ดึงข้อมูลทั้งหมด */}
+                          <button
+                            type="button"
+                            onClick={() => handleSelectCustomerProfile(res.customer, res.suggestedDevice)}
+                            title="ดึงข้อมูลเดิมทั้งหมดของลูกค้านี้ (ชื่อ, เบอร์, ที่อยู่, รุ่นเครื่อง)"
+                            className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[10px] font-bold shadow-xs flex items-center gap-1 transition-colors cursor-pointer"
+                          >
+                            <Sparkles className="w-3 h-3 text-amber-300" />
+                            <span>ดึงทั้งหมด</span>
+                          </button>
                         </div>
-                      </button>
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -702,6 +913,11 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
                           >
                             <span>{dev.brand} {dev.model}</span>
                             {dev.serialNumber && <span className="opacity-75 font-mono text-[10px]">({dev.serialNumber})</span>}
+                            {dev.isUnderWarranty && (
+                              <span className="px-1 py-0.2 rounded bg-emerald-200 dark:bg-emerald-800 text-[9px] text-emerald-900 dark:text-emerald-100 font-bold">
+                                🛡️ ในประกัน
+                              </span>
+                            )}
                             {isCurrent && <Check className="w-3 h-3" />}
                           </button>
                         );
@@ -709,6 +925,111 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
                     </div>
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Active Warranty Match Alert Banner (Real-time detection) */}
+            {activeWarrantyMatch && (
+              <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-amber-50 dark:from-emerald-950/50 dark:via-teal-950/40 dark:to-amber-950/40 border-2 border-emerald-500/80 dark:border-emerald-500 rounded-xl p-3.5 text-xs shadow-md space-y-2 animate-in fade-in duration-200">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-start gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white flex items-center justify-center font-bold shrink-0 shadow-sm mt-0.5">
+                      <ShieldCheck className="w-5 h-5 text-white" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-black text-sm text-emerald-900 dark:text-emerald-100">
+                          🛡️ ตรวจพบ: เครื่องนี้อยู่ในระยะประกันงานซ่อม!
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full text-[11px] font-black bg-emerald-600 text-white shadow-xs animate-pulse">
+                          เหลืออีก {activeWarrantyMatch.warrantyResult.daysRemaining} วัน
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-emerald-800 dark:text-emerald-300 mt-0.5">
+                        ใบรับซ่อมเดิม: <strong className="font-mono">{activeWarrantyMatch.ticket.ticketNumber}</strong> • 
+                        {activeWarrantyMatch.ticket.deliveredDate ? ` ส่งมอบเมื่อ ${activeWarrantyMatch.ticket.deliveredDate}` : ` รับเครื่อง ${activeWarrantyMatch.ticket.receivedDate}`} • 
+                        หมดประกันวันที่: <strong className="font-mono">{activeWarrantyMatch.warrantyResult.expiryDate}</strong> (ประกัน {activeWarrantyMatch.warrantyResult.warrantyDays} วัน)
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setDismissWarrantyAlert(true)}
+                    className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 rounded-lg cursor-pointer"
+                    title="ปิดการแจ้งเตือน"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="bg-white/80 dark:bg-slate-900/80 rounded-lg p-2.5 border border-emerald-200 dark:border-emerald-800 text-[11px] space-y-1">
+                  <div className="flex items-center justify-between text-slate-700 dark:text-slate-300 flex-wrap gap-1">
+                    <span>
+                      เครื่อง: <strong>{activeWarrantyMatch.ticket.brand} {activeWarrantyMatch.ticket.model}</strong>
+                      {activeWarrantyMatch.ticket.serialNumber && <span className="font-mono text-slate-500 ml-1">(S/N: {activeWarrantyMatch.ticket.serialNumber})</span>}
+                    </span>
+                    <span className="text-slate-500">
+                      ช่างผู้ซ่อมเดิม: <strong>{activeWarrantyMatch.ticket.technicianName || 'ช่างประจำร้าน'}</strong>
+                    </span>
+                  </div>
+                  <div className="text-slate-600 dark:text-slate-400 text-[11px]">
+                    <span className="font-semibold text-slate-700 dark:text-slate-300">อาการเดิม: </span>
+                    <span>{activeWarrantyMatch.ticket.problemDescription}</span>
+                  </div>
+                  {activeWarrantyMatch.ticket.partsUsed && activeWarrantyMatch.ticket.partsUsed.length > 0 && (
+                    <div className="text-slate-500 text-[10px]">
+                      <span>อะไหล่ที่เคยเปลี่ยน: </span>
+                      <span className="font-medium text-slate-700 dark:text-slate-300">
+                        {activeWarrantyMatch.ticket.partsUsed.map(p => p.itemName).join(', ')}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-1 border-t border-emerald-200/60 dark:border-emerald-800/60">
+                  <span className="text-[11px] text-emerald-800 dark:text-emerald-300 font-medium">
+                    💡 หากลูกค้านำเครื่องกลับมาด้วยปัญหาเดิม สามารถเปิดเป็นงานเคลมประกันฟรีโดยไม่คิดค่าแรงซ้ำ
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleApplyWarrantyClaim(activeWarrantyMatch)}
+                    className="w-full sm:w-auto px-3.5 py-1.5 rounded-lg text-xs font-black bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white shadow-sm flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                  >
+                    <ShieldCheck className="w-4 h-4 text-emerald-200" />
+                    <span>🛡️ เปิดเป็นงานเคลมประกันฟรี (ปรับค่าแรง 0 บาท)</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Warranty Claim Active Indicator */}
+            {isWarrantyClaim && (
+              <div className="bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-950/60 dark:to-indigo-950/60 border-2 border-purple-400 dark:border-purple-600 rounded-xl p-3 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-xs animate-in fade-in duration-150">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-7 h-7 rounded-lg bg-purple-600 text-white flex items-center justify-center font-bold shrink-0 shadow-xs">
+                    <ShieldCheck className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <span className="font-bold text-purple-950 dark:text-purple-100 flex items-center gap-1.5 flex-wrap">
+                      <span>งานเคลมประกันต่อเนื่อง (ฟรีค่าแรง)</span>
+                      {originalTicketNumber && (
+                        <span className="font-mono bg-purple-200/80 dark:bg-purple-900 text-purple-900 dark:text-purple-200 px-1.5 py-0.2 rounded font-bold">
+                          อ้างอิงใบเดิม: {originalTicketNumber}
+                        </span>
+                      )}
+                    </span>
+                    <p className="text-[11px] text-purple-700 dark:text-purple-300">
+                      ✓ ไม่คิดค่าแรงตรวจเช็คซ้ำซ้อนตามเงื่อนไขการรับประกันงานซ่อม
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCancelWarrantyClaim}
+                  className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-white dark:bg-slate-800 border border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-slate-700 transition-colors cursor-pointer shrink-0"
+                >
+                  ยกเลิกเคลม / คิดค่าแรงปกติ
+                </button>
               </div>
             )}
 
@@ -738,26 +1059,24 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
                     <div className="px-3 py-1.5 bg-blue-50 dark:bg-blue-950 flex items-center justify-between text-[11px] text-blue-700 dark:text-blue-300 font-bold">
                       <span className="flex items-center gap-1">
                         <Sparkles className="w-3.5 h-3.5 text-blue-500" />
-                        <span>ลูกค้าเก่าที่ชื่อขึ้นต้น/ตรงกัน ({nameSuggestions.length})</span>
+                        <span>ลูกค้าเก่าที่ขึ้นต้น/ตรงกัน ({nameSuggestions.length})</span>
                       </span>
-                      <span className="text-[10px] text-slate-500">คลิกเพื่อดึงข้อมูล</span>
+                      <span className="text-[10px] text-slate-500 hidden sm:inline">เลือก: ใส่เฉพาะชื่อ หรือ ดึงข้อมูลทั้งหมด</span>
                     </div>
                     <div className="max-h-56 overflow-y-auto">
                       {nameSuggestions.map(res => (
-                        <button
+                        <div
                           key={res.customer.key}
-                          type="button"
-                          onClick={() => handleSelectCustomerProfile(res.customer, res.suggestedDevice)}
-                          className="w-full text-left px-3 py-2 hover:bg-blue-50/80 dark:hover:bg-slate-700/70 transition-colors flex items-center justify-between gap-2 cursor-pointer group"
+                          className="w-full text-left px-3 py-2 hover:bg-blue-50/70 dark:hover:bg-slate-700/60 transition-colors flex items-center justify-between gap-2"
                         >
-                          <div className="min-w-0">
-                            <div className="font-bold text-slate-800 dark:text-white text-xs flex items-center gap-1.5">
+                          <div className="min-w-0 flex-1">
+                            <div className="font-bold text-slate-800 dark:text-white text-xs flex items-center gap-1.5 flex-wrap">
                               <span>{res.customer.customerName}</span>
                               <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
-                                {res.customer.totalVisits} ครั้ง
+                                เคยซ่อม {res.customer.totalVisits} ครั้ง
                               </span>
                             </div>
-                            <div className="text-[11px] text-slate-500 flex items-center gap-1.5 mt-0.5">
+                            <div className="text-[11px] text-slate-500 flex items-center gap-1.5 flex-wrap mt-0.5">
                               <span className="font-mono">{res.customer.customerPhone}</span>
                               {res.suggestedDevice && (
                                 <>
@@ -765,14 +1084,44 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
                                   <span className="text-purple-600 dark:text-purple-400 font-medium truncate">
                                     {res.suggestedDevice.brand} {res.suggestedDevice.model}
                                   </span>
+                                  {res.suggestedDevice.isUnderWarranty && (
+                                    <span className="text-[10px] px-1.5 py-0.2 rounded font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-800 flex items-center gap-0.5">
+                                      <ShieldCheck className="w-2.5 h-2.5 text-emerald-600" />
+                                      <span>ในประกัน ({res.suggestedDevice.warrantyDaysRemaining} วัน)</span>
+                                    </span>
+                                  )}
                                 </>
                               )}
                             </div>
                           </div>
-                          <span className="shrink-0 text-[10px] font-bold text-blue-600 dark:text-blue-400 group-hover:translate-x-0.5 transition-transform">
-                            เลือก →
-                          </span>
-                        </button>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCustomerName(res.customer.customerName);
+                                setShowNameSuggestions(false);
+                                setToastMessage(`ใส่เฉพาะชื่อ "${res.customer.customerName}" เรียบร้อย (ไม่เปลี่ยนช่องอื่น)`);
+                                setTimeout(() => setToastMessage(null), 3000);
+                              }}
+                              title="ใส่เฉพาะชื่อในช่องนี้ (ไม่กระทบเบอร์โทรหรือเครื่อง)"
+                              className="px-2 py-1 rounded-lg text-[10px] font-semibold bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600 transition-colors cursor-pointer"
+                            >
+                              ใส่เฉพาะชื่อ
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleSelectCustomerProfile(res.customer, res.suggestedDevice);
+                                setShowNameSuggestions(false);
+                              }}
+                              title="ดึงข้อมูลลูกค้าเดิมทั้งหมด (ชื่อ, เบอร์, ที่อยู่, รุ่นเครื่องเดิม)"
+                              className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[10px] font-bold shadow-xs flex items-center gap-1 transition-colors cursor-pointer"
+                            >
+                              <Sparkles className="w-3 h-3 text-amber-300" />
+                              <span>ดึงทั้งหมด</span>
+                            </button>
+                          </div>
+                        </div>
                       ))}
                     </div>
                   </div>
@@ -805,38 +1154,66 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
                         <Phone className="w-3.5 h-3.5 text-blue-500" />
                         <span>พบเบอร์ลูกค้าเก่าที่ตรงกัน ({phoneSuggestions.length})</span>
                       </span>
-                      <span className="text-[10px] text-slate-500">คลิกเพื่อดึงข้อมูล</span>
+                      <span className="text-[10px] text-slate-500 hidden sm:inline">เลือก: ใส่เฉพาะเบอร์ หรือ ดึงข้อมูลทั้งหมด</span>
                     </div>
                     <div className="max-h-56 overflow-y-auto">
                       {phoneSuggestions.map(res => (
-                        <button
+                        <div
                           key={res.customer.key}
-                          type="button"
-                          onClick={() => handleSelectCustomerProfile(res.customer, res.suggestedDevice)}
-                          className="w-full text-left px-3 py-2 hover:bg-blue-50/80 dark:hover:bg-slate-700/70 transition-colors flex items-center justify-between gap-2 cursor-pointer group"
+                          className="w-full text-left px-3 py-2 hover:bg-blue-50/70 dark:hover:bg-slate-700/60 transition-colors flex items-center justify-between gap-2"
                         >
-                          <div className="min-w-0">
-                            <div className="font-bold text-slate-800 dark:text-white text-xs flex items-center gap-1.5">
+                          <div className="min-w-0 flex-1">
+                            <div className="font-bold text-slate-800 dark:text-white text-xs flex items-center gap-1.5 flex-wrap">
                               <span className="font-mono text-blue-600 dark:text-blue-400 font-extrabold">{res.customer.customerPhone}</span>
                               <span>({res.customer.customerName})</span>
                             </div>
                             {res.suggestedDevice && (
-                              <div className="text-[11px] text-slate-500 truncate mt-0.5">
-                                รุ่นเดิม: {res.suggestedDevice.brand} {res.suggestedDevice.model}
+                              <div className="text-[11px] text-slate-500 flex items-center gap-1.5 flex-wrap mt-0.5">
+                                <span className="truncate">รุ่นเดิม: {res.suggestedDevice.brand} {res.suggestedDevice.model}</span>
+                                {res.suggestedDevice.isUnderWarranty && (
+                                  <span className="text-[10px] px-1.5 py-0.2 rounded font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-800 flex items-center gap-0.5">
+                                    <ShieldCheck className="w-2.5 h-2.5 text-emerald-600" />
+                                    <span>ในประกัน ({res.suggestedDevice.warrantyDaysRemaining} วัน)</span>
+                                  </span>
+                                )}
                               </div>
                             )}
                           </div>
-                          <span className="shrink-0 text-[10px] font-bold text-blue-600 dark:text-blue-400 group-hover:translate-x-0.5 transition-transform">
-                            เลือก →
-                          </span>
-                        </button>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCustomerPhone(res.customer.customerPhone);
+                                setShowPhoneSuggestions(false);
+                                setToastMessage(`ใส่เฉพาะเบอร์ "${res.customer.customerPhone}" เรียบร้อย (ไม่เปลี่ยนช่องอื่น)`);
+                                setTimeout(() => setToastMessage(null), 3000);
+                              }}
+                              title="ใส่เฉพาะเบอร์โทรในช่องนี้ (ไม่กระทบชื่อหรือเครื่อง)"
+                              className="px-2 py-1 rounded-lg text-[10px] font-semibold bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600 transition-colors cursor-pointer"
+                            >
+                              ใส่เฉพาะเบอร์
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleSelectCustomerProfile(res.customer, res.suggestedDevice);
+                                setShowPhoneSuggestions(false);
+                              }}
+                              title="ดึงข้อมูลลูกค้าเดิมทั้งหมด (ชื่อ, เบอร์, ที่อยู่, รุ่นเครื่องเดิม)"
+                              className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[10px] font-bold shadow-xs flex items-center gap-1 transition-colors cursor-pointer"
+                            >
+                              <Sparkles className="w-3 h-3 text-amber-300" />
+                              <span>ดึงทั้งหมด</span>
+                            </button>
+                          </div>
+                        </div>
                       ))}
                     </div>
                   </div>
                 )}
               </div>
 
-              <div>
+              <div ref={lineInputWrapperRef} className="relative">
                 <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
                   LINE ID (สำหรับส่งลิงก์ตรวจสถานะ)
                 </label>
@@ -844,12 +1221,41 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
                   type="text"
                   placeholder="เช่น somchai_jd"
                   value={customerLineId}
-                  onChange={e => setCustomerLineId(e.target.value)}
+                  onChange={e => {
+                    setCustomerLineId(e.target.value);
+                    setShowLineSuggestions(true);
+                  }}
+                  onFocus={() => setShowLineSuggestions(true)}
                   className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-blue-500 text-slate-800 dark:text-white"
                 />
+
+                {showLineSuggestions && lineSuggestions.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-blue-200 dark:border-blue-700 overflow-hidden divide-y divide-slate-100 dark:divide-slate-700 animate-in fade-in duration-150">
+                    <div className="px-2.5 py-1 bg-blue-50 dark:bg-blue-950 text-[10px] text-blue-700 dark:text-blue-300 font-bold flex items-center justify-between">
+                      <span>ประวัติ LINE ID ในระบบ ({lineSuggestions.length})</span>
+                      <span className="text-[10px] text-slate-400">คลิกเลือก</span>
+                    </div>
+                    <div className="max-h-48 overflow-y-auto">
+                      {lineSuggestions.map((lid, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => {
+                            setCustomerLineId(lid);
+                            setShowLineSuggestions(false);
+                          }}
+                          className="w-full text-left px-3 py-1.5 hover:bg-blue-50 dark:hover:bg-slate-700 text-xs font-mono text-slate-700 dark:text-slate-200 flex items-center justify-between cursor-pointer"
+                        >
+                          <span>{lid}</span>
+                          <span className="text-[10px] text-blue-600 font-bold">เลือก →</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
-              <div className="sm:col-span-2 lg:col-span-3">
+              <div ref={addressInputWrapperRef} className="sm:col-span-2 lg:col-span-3 relative">
                 <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
                   ที่อยู่ / สถานที่ติดต่อ (ถ้ามี)
                 </label>
@@ -857,9 +1263,38 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
                   type="text"
                   placeholder="ตำบล อำเภอ จังหวัด"
                   value={customerAddress}
-                  onChange={e => setCustomerAddress(e.target.value)}
+                  onChange={e => {
+                    setCustomerAddress(e.target.value);
+                    setShowAddressSuggestions(true);
+                  }}
+                  onFocus={() => setShowAddressSuggestions(true)}
                   className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-blue-500 text-slate-800 dark:text-white"
                 />
+
+                {showAddressSuggestions && addressSuggestions.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-blue-200 dark:border-blue-700 overflow-hidden divide-y divide-slate-100 dark:divide-slate-700 animate-in fade-in duration-150">
+                    <div className="px-2.5 py-1 bg-blue-50 dark:bg-blue-950 text-[10px] text-blue-700 dark:text-blue-300 font-bold flex items-center justify-between">
+                      <span>ประวัติที่อยู่เดิมในระบบ ({addressSuggestions.length})</span>
+                      <span className="text-[10px] text-slate-400">คลิกเลือก</span>
+                    </div>
+                    <div className="max-h-48 overflow-y-auto">
+                      {addressSuggestions.map((addr, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => {
+                            setCustomerAddress(addr);
+                            setShowAddressSuggestions(false);
+                          }}
+                          className="w-full text-left px-3 py-1.5 hover:bg-blue-50 dark:hover:bg-slate-700 text-xs text-slate-700 dark:text-slate-200 flex items-center justify-between cursor-pointer"
+                        >
+                          <span className="truncate">{addr}</span>
+                          <span className="text-[10px] text-blue-600 font-bold shrink-0 ml-2">เลือก →</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -999,18 +1434,16 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
                         <History className="w-3.5 h-3.5 text-purple-500" />
                         <span>พบประวัติรุ่นนี้เคยส่งซ่อม ({modelSuggestions.length} เครื่อง)</span>
                       </span>
-                      <span className="text-[10px] text-slate-500">คลิกเพื่อดึงข้อมูลเครื่องและเจ้าของ</span>
+                      <span className="text-[10px] text-slate-500 hidden sm:inline">เลือก: ใส่เฉพาะรุ่น หรือ ดึงข้อมูลทั้งหมด</span>
                     </div>
                     <div className="max-h-56 overflow-y-auto">
                       {modelSuggestions.map(res => (
-                        <button
+                        <div
                           key={`${res.customer.key}-${res.suggestedDevice?.model}-${res.suggestedDevice?.serialNumber}`}
-                          type="button"
-                          onClick={() => handleSelectCustomerProfile(res.customer, res.suggestedDevice)}
-                          className="w-full text-left px-3 py-2.5 hover:bg-purple-50/80 dark:hover:bg-slate-700/70 transition-colors flex items-start justify-between gap-2 cursor-pointer group"
+                          className="w-full text-left px-3 py-2.5 hover:bg-purple-50/70 dark:hover:bg-slate-700/60 transition-colors flex items-start justify-between gap-2"
                         >
-                          <div className="min-w-0">
-                            <div className="font-bold text-slate-800 dark:text-white text-xs flex items-center gap-1.5">
+                          <div className="min-w-0 flex-1">
+                            <div className="font-bold text-slate-800 dark:text-white text-xs flex items-center gap-1.5 flex-wrap">
                               <span className="text-purple-600 dark:text-purple-400 font-extrabold">
                                 {res.suggestedDevice?.brand} {res.suggestedDevice?.model}
                               </span>
@@ -1019,9 +1452,15 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
                                   {res.suggestedDevice.serialNumber}
                                 </span>
                               )}
+                              {res.suggestedDevice?.isUnderWarranty && (
+                                <span className="text-[10px] px-1.5 py-0.2 rounded font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-800 flex items-center gap-0.5">
+                                  <ShieldCheck className="w-2.5 h-2.5 text-emerald-600" />
+                                  <span>ในประกัน ({res.suggestedDevice.warrantyDaysRemaining} วัน)</span>
+                                </span>
+                              )}
                             </div>
                             <div className="text-[11px] text-slate-600 dark:text-slate-400 flex items-center gap-1.5 mt-0.5">
-                              <span>เจ้าของ: <strong className="text-slate-800 dark:text-slate-200">{res.customer.customerName}</strong></span>
+                              <span>เจ้าของเดิม: <strong className="text-slate-800 dark:text-slate-200">{res.customer.customerName}</strong></span>
                               <span>•</span>
                               <span className="font-mono">{res.customer.customerPhone}</span>
                             </div>
@@ -1031,17 +1470,45 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
                               </div>
                             )}
                           </div>
-                          <span className="shrink-0 text-[10px] font-bold text-purple-600 dark:text-purple-400 group-hover:translate-x-0.5 transition-transform">
-                            ดึงข้อมูล →
-                          </span>
-                        </button>
+                          <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (res.suggestedDevice) {
+                                  setModel(res.suggestedDevice.model);
+                                  if (res.suggestedDevice.brand) setBrand(res.suggestedDevice.brand);
+                                  if (res.suggestedDevice.deviceType) setDeviceType(res.suggestedDevice.deviceType);
+                                }
+                                setShowModelSuggestions(false);
+                                setToastMessage(`ใส่เฉพาะรุ่น "${res.suggestedDevice?.brand} ${res.suggestedDevice?.model}" แล้ว (ไม่เปลี่ยนข้อมูลลูกค้า)`);
+                                setTimeout(() => setToastMessage(null), 3000);
+                              }}
+                              title="ใส่เฉพาะรุ่นและยี่ห้อนี้ในช่องอุปกรณ์ (ไม่เปลี่ยนข้อมูลลูกค้า)"
+                              className="px-2 py-1 rounded-lg text-[10px] font-semibold bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600 transition-colors cursor-pointer"
+                            >
+                              ใส่เฉพาะรุ่นนี้
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleSelectCustomerProfile(res.customer, res.suggestedDevice);
+                                setShowModelSuggestions(false);
+                              }}
+                              title="ดึงข้อมูลลูกค้าและเครื่องเดิมทั้งหมด"
+                              className="px-2.5 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-[10px] font-bold shadow-xs flex items-center gap-1 transition-colors cursor-pointer"
+                            >
+                              <Sparkles className="w-3 h-3 text-amber-300" />
+                              <span>ดึงทั้งหมด</span>
+                            </button>
+                          </div>
+                        </div>
                       ))}
                     </div>
                   </div>
                 )}
               </div>
 
-              <div>
+              <div ref={serialInputWrapperRef} className="relative">
                 <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
                   Serial Number (S/N)
                 </label>
@@ -1049,9 +1516,38 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
                   type="text"
                   placeholder="หมายเลขเครื่องใต้ฐาน"
                   value={serialNumber}
-                  onChange={e => setSerialNumber(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-blue-500 text-slate-800 dark:text-white"
+                  onChange={e => {
+                    setSerialNumber(e.target.value);
+                    setShowSerialSuggestions(true);
+                  }}
+                  onFocus={() => setShowSerialSuggestions(true)}
+                  className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-blue-500 text-slate-800 dark:text-white font-mono"
                 />
+
+                {showSerialSuggestions && serialSuggestions.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-purple-200 dark:border-purple-700 overflow-hidden divide-y divide-slate-100 dark:divide-slate-700 animate-in fade-in duration-150">
+                    <div className="px-2.5 py-1 bg-purple-50 dark:bg-purple-950 text-[10px] text-purple-700 dark:text-purple-300 font-bold flex items-center justify-between">
+                      <span>ประวัติ S/N ในระบบ ({serialSuggestions.length})</span>
+                      <span className="text-[10px] text-slate-400">คลิกเลือก</span>
+                    </div>
+                    <div className="max-h-48 overflow-y-auto">
+                      {serialSuggestions.map((sn, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => {
+                            setSerialNumber(sn);
+                            setShowSerialSuggestions(false);
+                          }}
+                          className="w-full text-left px-3 py-1.5 hover:bg-purple-50 dark:hover:bg-slate-700 text-xs font-mono text-slate-700 dark:text-slate-200 flex items-center justify-between cursor-pointer"
+                        >
+                          <span>{sn}</span>
+                          <span className="text-[10px] text-purple-600 font-bold">เลือก →</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1292,17 +1788,46 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
                 </select>
               </div>
 
-              <div>
+              <div ref={technicianInputWrapperRef} className="relative">
                 <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
                   ช่างผู้รับผิดชอบ
                 </label>
                 <input
                   type="text"
-                  placeholder="เช่น ช่างเอก, ช่างบอย"
+                  placeholder="เช่น ช่างเอก, ช่างวิทย์, ช่างบอย"
                   value={technicianName}
-                  onChange={e => setTechnicianName(e.target.value)}
+                  onChange={e => {
+                    setTechnicianName(e.target.value);
+                    setShowTechnicianSuggestions(true);
+                  }}
+                  onFocus={() => setShowTechnicianSuggestions(true)}
                   className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs"
                 />
+
+                {showTechnicianSuggestions && technicianSuggestions.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-cyan-200 dark:border-cyan-700 overflow-hidden divide-y divide-slate-100 dark:divide-slate-700 animate-in fade-in duration-150">
+                    <div className="px-2.5 py-1 bg-cyan-50 dark:bg-cyan-950 text-[10px] text-cyan-700 dark:text-cyan-300 font-bold flex items-center justify-between">
+                      <span>รายชื่อช่างในระบบ ({technicianSuggestions.length})</span>
+                      <span className="text-[10px] text-slate-400">คลิกเลือก</span>
+                    </div>
+                    <div className="max-h-44 overflow-y-auto">
+                      {technicianSuggestions.map((tech, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => {
+                            setTechnicianName(tech);
+                            setShowTechnicianSuggestions(false);
+                          }}
+                          className="w-full text-left px-3 py-1.5 hover:bg-cyan-50 dark:hover:bg-slate-700 text-xs text-slate-700 dark:text-slate-200 flex items-center justify-between cursor-pointer"
+                        >
+                          <span>{tech}</span>
+                          <span className="text-[10px] text-cyan-600 font-bold">เลือก →</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div>
@@ -1569,6 +2094,118 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
               </div>
             </div>
 
+            {/* Warranty Tracking & Guarantee Section */}
+            <div className="p-3.5 rounded-xl bg-gradient-to-r from-slate-50 via-emerald-50/20 to-slate-50 dark:from-slate-900/60 dark:via-emerald-950/20 dark:to-slate-900/60 border border-emerald-200 dark:border-emerald-800/60 space-y-3">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <span className="font-bold text-slate-800 dark:text-white text-xs flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                  <span>ระยะเวลารับประกันงานซ่อมสำหรับใบนี้ (Warranty Tracking)</span>
+                </span>
+                <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${
+                  warrantyDays > 0
+                    ? 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-300 dark:border-slate-700'
+                }`}>
+                  {warrantyDays > 0 ? `🛡️ รับประกัน ${warrantyDays} วัน` : 'ไม่มีการรับประกัน'}
+                </span>
+              </div>
+
+              {/* Warranty Presets */}
+              <div>
+                <label className="block text-[11px] text-slate-500 dark:text-slate-400 font-medium mb-1.5">
+                  เลือกระยะเวลารับประกันสำเร็จรูป (คลิกเลือก):
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {WARRANTY_PRESETS.map(preset => (
+                    <button
+                      key={preset.days}
+                      type="button"
+                      onClick={() => setWarrantyDays(preset.days)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                        warrantyDays === preset.days
+                          ? 'bg-emerald-600 text-white shadow-xs font-bold'
+                          : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-emerald-50 hover:border-emerald-300'
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Custom Warranty Days & Expiry Calculation Preview */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 text-xs">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase mb-1">
+                    หรือระบุจำนวนวันรับประกันเอง (วัน)
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min="0"
+                      max="1000"
+                      placeholder="เช่น 30"
+                      value={warrantyDays}
+                      onChange={e => setWarrantyDays(Math.max(0, parseInt(e.target.value) || 0))}
+                      className="w-32 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-white font-bold"
+                    />
+                    <span className="text-slate-500 font-medium">วัน</span>
+                  </div>
+                </div>
+
+                <div className="p-2.5 rounded-lg bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-[11px] text-emerald-900 dark:text-emerald-200 flex items-start gap-2">
+                  <Clock className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  <div>
+                    {warrantyDays > 0 ? (
+                      <>
+                        <span className="font-bold">การนับถอยหลังประกันงานซ่อม:</span>
+                        <p className="text-[10px] text-emerald-800 dark:text-emerald-300 mt-0.5">
+                          เริ่มนับ {warrantyDays} วัน ทันทีที่ส่งมอบเครื่องให้ลูกค้า หากลูกค้ากลับมาซ่อมซ้ำในระยะนี้ ระบบจะแจ้งเตือนงานเคลมฟรีอัตโนมัติ
+                        </p>
+                      </>
+                    ) : (
+                      <span>ไม่มีการรับประกันสำหรับงานนี้</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Checkbox for Warranty Claim Flag */}
+              <div className="pt-2 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={isWarrantyClaim}
+                    onChange={e => {
+                      setIsWarrantyClaim(e.target.checked);
+                      if (e.target.checked) {
+                        setLaborCostInput('0');
+                        setDiscountInput('0');
+                      }
+                    }}
+                    className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500 cursor-pointer"
+                  />
+                  <span className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1">
+                    <ShieldCheck className="w-3.5 h-3.5 text-purple-600" />
+                    <span>ระบุว่าเป็นงานเคลมประกันงานซ่อมเดิม (ฟรีค่าแรง)</span>
+                  </span>
+                </label>
+
+                {isWarrantyClaim && (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[11px] text-slate-500 font-medium">เลขที่ใบรับซ่อมเดิมที่เคลม:</span>
+                    <input
+                      type="text"
+                      placeholder="เช่น REP-20261026-002"
+                      value={originalTicketNumber}
+                      onChange={e => setOriginalTicketNumber(e.target.value)}
+                      className="px-2.5 py-1 rounded-lg border border-purple-300 dark:border-purple-700 bg-white dark:bg-slate-800 font-mono text-xs text-purple-900 dark:text-purple-200 font-bold focus:ring-2 focus:ring-purple-500"
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+
             {/* Payment Section */}
             <div className="space-y-3 pt-1">
               <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
@@ -1624,7 +2261,7 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                    <div>
+                    <div ref={govAgencyInputWrapperRef} className="relative">
                       <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">
                         ชื่อหน่วยงานราชการ / สถาบัน
                       </label>
@@ -1632,11 +2269,40 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
                         type="text"
                         placeholder="เช่น โรงเรียนพัทลุง, อบต."
                         value={govAgencyName}
-                        onChange={e => setGovAgencyName(e.target.value)}
+                        onChange={e => {
+                          setGovAgencyName(e.target.value);
+                          setShowGovAgencySuggestions(true);
+                        }}
+                        onFocus={() => setShowGovAgencySuggestions(true)}
                         className="w-full px-2.5 py-1.5 rounded-lg border border-purple-200 dark:border-purple-700 bg-white dark:bg-slate-800"
                       />
+
+                      {showGovAgencySuggestions && govAgencySuggestions.length > 0 && (
+                        <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-purple-200 dark:border-purple-700 overflow-hidden divide-y divide-slate-100 dark:divide-slate-700 animate-in fade-in duration-150">
+                          <div className="px-2 py-1 bg-purple-50 dark:bg-purple-950 text-[10px] text-purple-700 dark:text-purple-300 font-bold flex items-center justify-between">
+                            <span>หน่วยงานในระบบ ({govAgencySuggestions.length})</span>
+                          </div>
+                          <div className="max-h-40 overflow-y-auto">
+                            {govAgencySuggestions.map((agency, idx) => (
+                              <button
+                                key={idx}
+                                type="button"
+                                onClick={() => {
+                                  setGovAgencyName(agency);
+                                  setShowGovAgencySuggestions(false);
+                                }}
+                                className="w-full text-left px-2.5 py-1.5 hover:bg-purple-50 dark:hover:bg-slate-700 text-xs text-slate-700 dark:text-slate-200 flex items-center justify-between cursor-pointer"
+                              >
+                                <span className="truncate">{agency}</span>
+                                <span className="text-[10px] text-purple-600 font-bold ml-1">เลือก →</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <div>
+
+                    <div ref={govTaxIdInputWrapperRef} className="relative">
                       <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">
                         เลขผู้เสียภาษี 13 หลัก
                       </label>
@@ -1644,10 +2310,39 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
                         type="text"
                         placeholder="เลข 13 หลัก"
                         value={govTaxId}
-                        onChange={e => setGovTaxId(e.target.value)}
+                        onChange={e => {
+                          setGovTaxId(e.target.value);
+                          setShowGovTaxIdSuggestions(true);
+                        }}
+                        onFocus={() => setShowGovTaxIdSuggestions(true)}
                         className="w-full px-2.5 py-1.5 rounded-lg border border-purple-200 dark:border-purple-700 bg-white dark:bg-slate-800 font-mono"
                       />
+
+                      {showGovTaxIdSuggestions && govTaxIdSuggestions.length > 0 && (
+                        <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-purple-200 dark:border-purple-700 overflow-hidden divide-y divide-slate-100 dark:divide-slate-700 animate-in fade-in duration-150">
+                          <div className="px-2 py-1 bg-purple-50 dark:bg-purple-950 text-[10px] text-purple-700 dark:text-purple-300 font-bold flex items-center justify-between">
+                            <span>เลขผู้เสียภาษี ({govTaxIdSuggestions.length})</span>
+                          </div>
+                          <div className="max-h-40 overflow-y-auto">
+                            {govTaxIdSuggestions.map((tax, idx) => (
+                              <button
+                                key={idx}
+                                type="button"
+                                onClick={() => {
+                                  setGovTaxId(tax);
+                                  setShowGovTaxIdSuggestions(false);
+                                }}
+                                className="w-full text-left px-2.5 py-1.5 hover:bg-purple-50 dark:hover:bg-slate-700 text-xs font-mono text-slate-700 dark:text-slate-200 flex items-center justify-between cursor-pointer"
+                              >
+                                <span>{tax}</span>
+                                <span className="text-[10px] text-purple-600 font-bold ml-1">เลือก →</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
+
                     <div>
                       <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">
                         เลขที่ใบสั่งซื้อ / PO No.
@@ -1663,7 +2358,7 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
                   </div>
 
                   <div className="grid grid-cols-2 gap-2 pt-1">
-                    <div>
+                    <div ref={govDeptInputWrapperRef} className="relative">
                       <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">
                         ฝ่าย / งานพัสดุ
                       </label>
@@ -1671,9 +2366,37 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
                         type="text"
                         placeholder="งานพัสดุ / แผนกคอมพิวเตอร์"
                         value={govDepartment}
-                        onChange={e => setGovDepartment(e.target.value)}
+                        onChange={e => {
+                          setGovDepartment(e.target.value);
+                          setShowGovDeptSuggestions(true);
+                        }}
+                        onFocus={() => setShowGovDeptSuggestions(true)}
                         className="w-full px-2.5 py-1 rounded-lg border border-purple-200 dark:border-purple-700 bg-white dark:bg-slate-800"
                       />
+
+                      {showGovDeptSuggestions && govDeptSuggestions.length > 0 && (
+                        <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-purple-200 dark:border-purple-700 overflow-hidden divide-y divide-slate-100 dark:divide-slate-700 animate-in fade-in duration-150">
+                          <div className="px-2 py-1 bg-purple-50 dark:bg-purple-950 text-[10px] text-purple-700 dark:text-purple-300 font-bold flex items-center justify-between">
+                            <span>ฝ่าย/งานพัสดุ ({govDeptSuggestions.length})</span>
+                          </div>
+                          <div className="max-h-40 overflow-y-auto">
+                            {govDeptSuggestions.map((dept, idx) => (
+                              <button
+                                key={idx}
+                                type="button"
+                                onClick={() => {
+                                  setGovDepartment(dept);
+                                  setShowGovDeptSuggestions(false);
+                                }}
+                                className="w-full text-left px-2.5 py-1.5 hover:bg-purple-50 dark:hover:bg-slate-700 text-xs text-slate-700 dark:text-slate-200 flex items-center justify-between cursor-pointer"
+                              >
+                                <span>{dept}</span>
+                                <span className="text-[10px] text-purple-600 font-bold ml-1">เลือก →</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                     <div>
                       <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">

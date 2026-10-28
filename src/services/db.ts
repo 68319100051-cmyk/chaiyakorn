@@ -379,7 +379,14 @@ class DatabaseService {
   async updateTicketBillingStatus(
     ticketId: string,
     billingStatus: import('../types').GovBillingStatus,
-    extra?: { billedDate?: string; paidDate?: string }
+    extra?: {
+      billedDate?: string;
+      paidDate?: string;
+      notes?: string;
+      disbursementNumber?: string;
+      disbursementDate?: string;
+      transferRef?: string;
+    }
   ): Promise<void> {
     const local = getLocal<RepairTicket[]>(LOCAL_STORAGE_KEYS.TICKETS, INITIAL_TICKETS);
     const idx = local.findIndex(t => t.id === ticketId);
@@ -393,7 +400,11 @@ class DatabaseService {
             ...(billingStatus === 'billed' && !existing.govCreditInfo.billedDate ? { billedDate: now } : {}),
             ...(billingStatus === 'paid' && !existing.govCreditInfo.paidDate ? { paidDate: now } : {}),
             ...(extra?.billedDate ? { billedDate: extra.billedDate } : {}),
-            ...(extra?.paidDate ? { paidDate: extra.paidDate } : {})
+            ...(extra?.paidDate ? { paidDate: extra.paidDate } : {}),
+            ...(extra?.notes !== undefined ? { notes: extra.notes } : {}),
+            ...(extra?.disbursementNumber !== undefined ? { disbursementNumber: extra.disbursementNumber } : {}),
+            ...(extra?.disbursementDate !== undefined ? { disbursementDate: extra.disbursementDate } : {}),
+            ...(extra?.transferRef !== undefined ? { transferRef: extra.transferRef } : {})
           }
         : undefined;
 
@@ -680,7 +691,14 @@ class DatabaseService {
   async updatePOSSaleBillingStatus(
     saleId: string,
     billingStatus: import('../types').GovBillingStatus,
-    extra?: { billedDate?: string; paidDate?: string; notes?: string }
+    extra?: {
+      billedDate?: string;
+      paidDate?: string;
+      notes?: string;
+      disbursementNumber?: string;
+      disbursementDate?: string;
+      transferRef?: string;
+    }
   ): Promise<void> {
     const local = getLocal<POSSaleRecord[]>(LOCAL_STORAGE_KEYS.POS_SALES, []);
     const idx = local.findIndex(s => s.id === saleId);
@@ -695,7 +713,10 @@ class DatabaseService {
             ...(billingStatus === 'paid' && !existing.govCreditInfo.paidDate ? { paidDate: now } : {}),
             ...(extra?.billedDate ? { billedDate: extra.billedDate } : {}),
             ...(extra?.paidDate ? { paidDate: extra.paidDate } : {}),
-            ...(extra?.notes ? { notes: extra.notes } : {})
+            ...(extra?.notes !== undefined ? { notes: extra.notes } : {}),
+            ...(extra?.disbursementNumber !== undefined ? { disbursementNumber: extra.disbursementNumber } : {}),
+            ...(extra?.disbursementDate !== undefined ? { disbursementDate: extra.disbursementDate } : {}),
+            ...(extra?.transferRef !== undefined ? { transferRef: extra.transferRef } : {})
           }
         : undefined;
 
