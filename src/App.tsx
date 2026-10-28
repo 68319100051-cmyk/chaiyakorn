@@ -341,6 +341,7 @@ export default function App() {
         ticketToEdit={ticketToEdit}
         inventory={inventory}
         allTickets={tickets}
+        posSales={posSales}
         generateNextTicketNumber={() => dbService.generateNextTicketNumber(tickets)}
       />
 

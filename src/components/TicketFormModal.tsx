@@ -1,12 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   RepairTicket,
   InventoryItem,
   DeviceType,
   RepairStatus,
   UsedPart,
-  GovCreditInfo
+  GovCreditInfo,
+  POSSaleRecord
 } from '../types';
+import {
+  buildCustomerProfiles,
+  searchReturningCustomers,
+  ReturningCustomerProfile,
+  CustomerDeviceHistory,
+  normalizePhone
+} from '../utils/customerLookup';
 import {
   X,
   Plus,
@@ -20,7 +28,16 @@ import {
   Monitor,
   Check,
   AlertCircle,
-  Building2
+  Building2,
+  History,
+  Sparkles,
+  Search,
+  ArrowRight,
+  Clock,
+  RotateCcw,
+  CheckCircle2,
+  Layers,
+  ChevronRight
 } from 'lucide-react';
 
 interface TicketFormModalProps {
@@ -30,6 +47,7 @@ interface TicketFormModalProps {
   ticketToEdit?: RepairTicket | null;
   inventory: InventoryItem[];
   allTickets: RepairTicket[];
+  posSales?: POSSaleRecord[];
   generateNextTicketNumber: () => string;
 }
 
@@ -73,6 +91,7 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
   ticketToEdit,
   inventory,
   allTickets,
+  posSales = [],
   generateNextTicketNumber
 }) => {
   if (!isOpen) return null;
@@ -118,6 +137,145 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
   const [initialPartsUsed, setInitialPartsUsed] = useState<UsedPart[]>([]);
   const [selectedInventoryId, setSelectedInventoryId] = useState<string>('');
   const [partQuantity, setPartQuantity] = useState<number>(1);
+
+  // Returning Customer Auto-Lookup & Suggestion State
+  const [activeLookupQuery, setActiveLookupQuery] = useState('');
+  const [selectedReturningCustomer, setSelectedReturningCustomer] = useState<ReturningCustomerProfile | null>(null);
+  const [showNameSuggestions, setShowNameSuggestions] = useState(false);
+  const [showPhoneSuggestions, setShowPhoneSuggestions] = useState(false);
+  const [showModelSuggestions, setShowModelSuggestions] = useState(false);
+  const [showLookupDropdown, setShowLookupDropdown] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // References for outside click dismissal
+  const nameInputWrapperRef = useRef<HTMLDivElement>(null);
+  const phoneInputWrapperRef = useRef<HTMLDivElement>(null);
+  const modelInputWrapperRef = useRef<HTMLDivElement>(null);
+  const lookupInputWrapperRef = useRef<HTMLDivElement>(null);
+
+  // Close suggestions on outside click
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (nameInputWrapperRef.current && !nameInputWrapperRef.current.contains(target)) {
+        setShowNameSuggestions(false);
+      }
+      if (phoneInputWrapperRef.current && !phoneInputWrapperRef.current.contains(target)) {
+        setShowPhoneSuggestions(false);
+      }
+      if (modelInputWrapperRef.current && !modelInputWrapperRef.current.contains(target)) {
+        setShowModelSuggestions(false);
+      }
+      if (lookupInputWrapperRef.current && !lookupInputWrapperRef.current.contains(target)) {
+        setShowLookupDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
+
+  // Aggregated returning customer profiles
+  const customerProfiles = useMemo(() => {
+    return buildCustomerProfiles(allTickets, posSales);
+  }, [allTickets, posSales]);
+
+  // Suggestions for Customer Name input
+  const nameSuggestions = useMemo(() => {
+    if (!customerName || customerName.trim().length < 2) return [];
+    return searchReturningCustomers(customerProfiles, customerName, 'name').slice(0, 6);
+  }, [customerProfiles, customerName]);
+
+  // Suggestions for Customer Phone input
+  const phoneSuggestions = useMemo(() => {
+    const cleanDigits = normalizePhone(customerPhone);
+    if (cleanDigits.length < 2) return [];
+    return searchReturningCustomers(customerProfiles, customerPhone, 'phone').slice(0, 6);
+  }, [customerProfiles, customerPhone]);
+
+  // Suggestions for Model input
+  const modelSuggestions = useMemo(() => {
+    if (!model || model.trim().length < 2) return [];
+    return searchReturningCustomers(customerProfiles, model, 'model').slice(0, 6);
+  }, [customerProfiles, model]);
+
+  // Suggestions for General Quick Lookup Bar
+  const generalLookupSuggestions = useMemo(() => {
+    if (!activeLookupQuery || activeLookupQuery.trim().length < 2) return [];
+    return searchReturningCustomers(customerProfiles, activeLookupQuery, 'all').slice(0, 8);
+  }, [customerProfiles, activeLookupQuery]);
+
+  // Handler to autofill from returning customer
+  const handleSelectCustomerProfile = (
+    profile: ReturningCustomerProfile,
+    device?: CustomerDeviceHistory
+  ) => {
+    setSelectedReturningCustomer(profile);
+    setCustomerName(profile.customerName);
+    setCustomerPhone(profile.customerPhone);
+    if (profile.customerLineId) setCustomerLineId(profile.customerLineId);
+    if (profile.customerAddress) setCustomerAddress(profile.customerAddress);
+
+    // If government credit info exists, pre-fill it!
+    if (profile.govCreditInfo) {
+      setPaymentMethod('gov_credit');
+      setGovAgencyName(profile.govCreditInfo.agencyName || profile.customerName);
+      if (profile.govCreditInfo.taxId) setGovTaxId(profile.govCreditInfo.taxId);
+      if (profile.govCreditInfo.department) setGovDepartment(profile.govCreditInfo.department);
+      if (profile.govCreditInfo.orderNumber) setGovOrderNumber(profile.govCreditInfo.orderNumber);
+      if (profile.govCreditInfo.creditDays) setGovCreditDays(profile.govCreditInfo.creditDays);
+    }
+
+    // Pre-fill device information if available
+    const targetDevice = device || profile.devices[0];
+    if (targetDevice) {
+      if (targetDevice.deviceType) setDeviceType(targetDevice.deviceType);
+      if (targetDevice.brand) setBrand(targetDevice.brand);
+      if (targetDevice.model) setModel(targetDevice.model);
+      if (targetDevice.serialNumber) setSerialNumber(targetDevice.serialNumber);
+      if (targetDevice.color) setColor(targetDevice.color);
+      if (targetDevice.accessories && targetDevice.accessories.length > 0) {
+        setAccessories(targetDevice.accessories);
+      }
+    }
+
+    setShowNameSuggestions(false);
+    setShowPhoneSuggestions(false);
+    setShowModelSuggestions(false);
+    setShowLookupDropdown(false);
+    setActiveLookupQuery('');
+
+    const deviceText = targetDevice ? ` (${targetDevice.brand} ${targetDevice.model})` : '';
+    setToastMessage(`ดึงข้อมูลคุณ ${profile.customerName}${deviceText} สำเร็จ (ประวัติส่งซ่อม ${profile.totalVisits} ครั้ง)`);
+    setTimeout(() => setToastMessage(null), 4500);
+  };
+
+  const handleApplySpecificDevice = (device: CustomerDeviceHistory) => {
+    if (device.deviceType) setDeviceType(device.deviceType);
+    if (device.brand) setBrand(device.brand);
+    if (device.model) setModel(device.model);
+    if (device.serialNumber) setSerialNumber(device.serialNumber);
+    if (device.color) setColor(device.color);
+    if (device.accessories && device.accessories.length > 0) {
+      setAccessories(device.accessories);
+    }
+    setToastMessage(`เลือกเครื่อง: ${device.brand} ${device.model} (S/N: ${device.serialNumber || '-'})`);
+    setTimeout(() => setToastMessage(null), 3500);
+  };
+
+  const handleClearReturningCustomer = () => {
+    setSelectedReturningCustomer(null);
+    setCustomerName('');
+    setCustomerPhone('');
+    setCustomerLineId('');
+    setCustomerAddress('');
+    setModel('');
+    setSerialNumber('');
+    setColor('');
+    setAccessories([]);
+    setGovAgencyName('');
+    setGovTaxId('');
+    setPaymentMethod('unpaid');
+  };
 
   // Initialize form
   useEffect(() => {
@@ -381,15 +539,183 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
 
         {/* Modal Body / Scrollable Form */}
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
+          {/* Toast Notification */}
+          {toastMessage && (
+            <div className="bg-emerald-600 text-white px-4 py-2.5 rounded-xl shadow-md flex items-center justify-between text-xs font-semibold animate-in slide-in-from-top-2 duration-150">
+              <span className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-200 shrink-0" />
+                <span>{toastMessage}</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setToastMessage(null)}
+                className="text-white/80 hover:text-white cursor-pointer ml-2"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
           {/* 1. Customer Information */}
           <div className="space-y-3">
-            <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2 border-b border-slate-100 dark:border-slate-700 pb-2">
-              <User className="w-4 h-4 text-blue-500" />
-              <span>1. ข้อมูลลูกค้า</span>
-            </h3>
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 pb-2">
+              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                <User className="w-4 h-4 text-blue-500" />
+                <span>1. ข้อมูลลูกค้า</span>
+              </h3>
+              <span className="text-[11px] text-slate-500 flex items-center gap-1">
+                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                <span>พิมพ์ชื่อ/เบอร์/รุ่น เพื่อดึงข้อมูลลูกค้าเก่าอัตโนมัติ</span>
+              </span>
+            </div>
 
+            {/* Quick Returning Customer Search Bar */}
+            <div ref={lookupInputWrapperRef} className="relative">
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-blue-500">
+                  <Search className="w-4 h-4" />
+                </div>
+                <input
+                  type="text"
+                  placeholder="🔍 ค้นหาดึงข้อมูลลูกค้าเดิม (พิมพ์ชื่อ, เบอร์โทร หรือรุ่นเครื่อง)..."
+                  value={activeLookupQuery}
+                  onChange={e => {
+                    setActiveLookupQuery(e.target.value);
+                    setShowLookupDropdown(true);
+                  }}
+                  onFocus={() => setShowLookupDropdown(true)}
+                  className="w-full pl-9 pr-8 py-2 text-xs rounded-xl bg-blue-50/70 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 text-slate-800 dark:text-white placeholder:text-blue-400/80 focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-slate-900 transition-all font-medium"
+                />
+                {activeLookupQuery && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveLookupQuery('');
+                      setShowLookupDropdown(false);
+                    }}
+                    className="absolute inset-y-0 right-0 pr-2.5 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {/* General Lookup Dropdown */}
+              {showLookupDropdown && generalLookupSuggestions.length > 0 && (
+                <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-blue-300 dark:border-blue-700 overflow-hidden divide-y divide-slate-100 dark:divide-slate-700 animate-in fade-in duration-150">
+                  <div className="px-3 py-1.5 bg-blue-50 dark:bg-blue-950 flex items-center justify-between text-[11px] text-blue-700 dark:text-blue-300 font-bold">
+                    <span className="flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-blue-500" />
+                      <span>พบประวัติลูกค้าเก่า ({generalLookupSuggestions.length} รายการ)</span>
+                    </span>
+                    <span className="text-[10px] text-slate-500">คลิกเพื่อเลือกและดึงข้อมูลลงฟอร์ม</span>
+                  </div>
+                  <div className="max-h-64 overflow-y-auto">
+                    {generalLookupSuggestions.map(res => (
+                      <button
+                        key={res.customer.key}
+                        type="button"
+                        onClick={() => handleSelectCustomerProfile(res.customer, res.suggestedDevice)}
+                        className="w-full text-left px-3.5 py-2.5 hover:bg-blue-50/80 dark:hover:bg-slate-700/70 transition-colors flex items-center justify-between gap-3 cursor-pointer group"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-slate-800 dark:text-white text-xs">
+                              {res.customer.customerName}
+                            </span>
+                            <span className="font-mono text-[11px] text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950 px-1.5 py-0.2 rounded">
+                              {res.customer.customerPhone}
+                            </span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-semibold">
+                              เคยซ่อม {res.customer.totalVisits} ครั้ง
+                            </span>
+                          </div>
+                          {res.suggestedDevice && (
+                            <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5 mt-0.5">
+                              <span className="text-purple-600 dark:text-purple-400 font-semibold">
+                                {res.suggestedDevice.brand} {res.suggestedDevice.model}
+                              </span>
+                              {res.suggestedDevice.serialNumber && (
+                                <span>(S/N: {res.suggestedDevice.serialNumber})</span>
+                              )}
+                              <span>• ล่าสุด: {res.customer.latestVisitDate}</span>
+                            </div>
+                          )}
+                        </div>
+                        <div className="shrink-0 flex items-center gap-1 px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[11px] font-bold shadow-xs group-hover:scale-105 transition-all">
+                          <span>ดึงข้อมูล</span>
+                          <ArrowRight className="w-3 h-3" />
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Active Returning Customer Highlight Banner */}
+            {selectedReturningCustomer && (
+              <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 dark:from-emerald-950/40 dark:via-teal-950/30 dark:to-emerald-950/40 border border-emerald-300 dark:border-emerald-800 rounded-xl p-3 text-xs space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-xs">
+                      ✓
+                    </div>
+                    <div>
+                      <span className="font-bold text-emerald-900 dark:text-emerald-200">
+                        ดึงข้อมูลลูกค้าเดิม: {selectedReturningCustomer.customerName}
+                      </span>
+                      <span className="text-emerald-700 dark:text-emerald-400 text-[11px] ml-2">
+                        (โทร: {selectedReturningCustomer.customerPhone} • เคยส่งซ่อมแล้ว {selectedReturningCustomer.totalVisits} ครั้ง)
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleClearReturningCustomer}
+                    className="text-[11px] text-rose-600 dark:text-rose-400 hover:underline flex items-center gap-1 cursor-pointer shrink-0"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>ล้าง / กรอกลูกค้าใหม่</span>
+                  </button>
+                </div>
+
+                {/* Quick device switcher if customer has registered devices */}
+                {selectedReturningCustomer.devices.length > 0 && (
+                  <div className="pt-1.5 border-t border-emerald-200/70 dark:border-emerald-800/60">
+                    <span className="text-[11px] text-slate-600 dark:text-slate-300 font-semibold block mb-1">
+                      เลือกรุ่นที่ลูกค้านำมาซ่อมรอบนี้ (คลิกเพื่อสลับข้อมูลเครื่องเดิม):
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {selectedReturningCustomer.devices.map((dev, idx) => {
+                        const isCurrent = model === dev.model && brand === dev.brand;
+                        return (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => handleApplySpecificDevice(dev)}
+                            className={`px-2 py-1 rounded-lg text-[11px] font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+                              isCurrent
+                                ? 'bg-emerald-600 text-white shadow-xs'
+                                : 'bg-white dark:bg-slate-800 border border-emerald-300 dark:border-emerald-700 text-emerald-900 dark:text-emerald-200 hover:bg-emerald-100'
+                            }`}
+                          >
+                            <span>{dev.brand} {dev.model}</span>
+                            {dev.serialNumber && <span className="opacity-75 font-mono text-[10px]">({dev.serialNumber})</span>}
+                            {isCurrent && <Check className="w-3 h-3" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Customer Inputs Grid with Autocomplete */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
-              <div>
+              {/* Customer Name Input with Suggestions */}
+              <div ref={nameInputWrapperRef} className="relative">
                 <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
                   ชื่อ-นามสกุล ลูกค้า <span className="text-rose-500">*</span>
                 </label>
@@ -398,12 +724,63 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
                   required
                   placeholder="เช่น คุณสมชาย ใจดี"
                   value={customerName}
-                  onChange={e => setCustomerName(e.target.value)}
+                  onChange={e => {
+                    setCustomerName(e.target.value);
+                    setShowNameSuggestions(true);
+                  }}
+                  onFocus={() => setShowNameSuggestions(true)}
                   className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-blue-500 text-slate-800 dark:text-white"
                 />
+
+                {/* Name Auto-Suggestions Dropdown */}
+                {showNameSuggestions && nameSuggestions.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-blue-300 dark:border-blue-700 overflow-hidden divide-y divide-slate-100 dark:divide-slate-700 animate-in fade-in duration-150">
+                    <div className="px-3 py-1.5 bg-blue-50 dark:bg-blue-950 flex items-center justify-between text-[11px] text-blue-700 dark:text-blue-300 font-bold">
+                      <span className="flex items-center gap-1">
+                        <Sparkles className="w-3.5 h-3.5 text-blue-500" />
+                        <span>ลูกค้าเก่าที่ชื่อขึ้นต้น/ตรงกัน ({nameSuggestions.length})</span>
+                      </span>
+                      <span className="text-[10px] text-slate-500">คลิกเพื่อดึงข้อมูล</span>
+                    </div>
+                    <div className="max-h-56 overflow-y-auto">
+                      {nameSuggestions.map(res => (
+                        <button
+                          key={res.customer.key}
+                          type="button"
+                          onClick={() => handleSelectCustomerProfile(res.customer, res.suggestedDevice)}
+                          className="w-full text-left px-3 py-2 hover:bg-blue-50/80 dark:hover:bg-slate-700/70 transition-colors flex items-center justify-between gap-2 cursor-pointer group"
+                        >
+                          <div className="min-w-0">
+                            <div className="font-bold text-slate-800 dark:text-white text-xs flex items-center gap-1.5">
+                              <span>{res.customer.customerName}</span>
+                              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
+                                {res.customer.totalVisits} ครั้ง
+                              </span>
+                            </div>
+                            <div className="text-[11px] text-slate-500 flex items-center gap-1.5 mt-0.5">
+                              <span className="font-mono">{res.customer.customerPhone}</span>
+                              {res.suggestedDevice && (
+                                <>
+                                  <span>•</span>
+                                  <span className="text-purple-600 dark:text-purple-400 font-medium truncate">
+                                    {res.suggestedDevice.brand} {res.suggestedDevice.model}
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                          <span className="shrink-0 text-[10px] font-bold text-blue-600 dark:text-blue-400 group-hover:translate-x-0.5 transition-transform">
+                            เลือก →
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
-              <div>
+              {/* Customer Phone Input with Suggestions */}
+              <div ref={phoneInputWrapperRef} className="relative">
                 <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
                   เบอร์โทรศัพท์ <span className="text-rose-500">*</span>
                 </label>
@@ -412,9 +789,51 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
                   required
                   placeholder="เช่น 089-123-4567"
                   value={customerPhone}
-                  onChange={e => setCustomerPhone(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-blue-500 text-slate-800 dark:text-white"
+                  onChange={e => {
+                    setCustomerPhone(e.target.value);
+                    setShowPhoneSuggestions(true);
+                  }}
+                  onFocus={() => setShowPhoneSuggestions(true)}
+                  className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-blue-500 text-slate-800 dark:text-white font-mono"
                 />
+
+                {/* Phone Auto-Suggestions Dropdown */}
+                {showPhoneSuggestions && phoneSuggestions.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-blue-300 dark:border-blue-700 overflow-hidden divide-y divide-slate-100 dark:divide-slate-700 animate-in fade-in duration-150">
+                    <div className="px-3 py-1.5 bg-blue-50 dark:bg-blue-950 flex items-center justify-between text-[11px] text-blue-700 dark:text-blue-300 font-bold">
+                      <span className="flex items-center gap-1">
+                        <Phone className="w-3.5 h-3.5 text-blue-500" />
+                        <span>พบเบอร์ลูกค้าเก่าที่ตรงกัน ({phoneSuggestions.length})</span>
+                      </span>
+                      <span className="text-[10px] text-slate-500">คลิกเพื่อดึงข้อมูล</span>
+                    </div>
+                    <div className="max-h-56 overflow-y-auto">
+                      {phoneSuggestions.map(res => (
+                        <button
+                          key={res.customer.key}
+                          type="button"
+                          onClick={() => handleSelectCustomerProfile(res.customer, res.suggestedDevice)}
+                          className="w-full text-left px-3 py-2 hover:bg-blue-50/80 dark:hover:bg-slate-700/70 transition-colors flex items-center justify-between gap-2 cursor-pointer group"
+                        >
+                          <div className="min-w-0">
+                            <div className="font-bold text-slate-800 dark:text-white text-xs flex items-center gap-1.5">
+                              <span className="font-mono text-blue-600 dark:text-blue-400 font-extrabold">{res.customer.customerPhone}</span>
+                              <span>({res.customer.customerName})</span>
+                            </div>
+                            {res.suggestedDevice && (
+                              <div className="text-[11px] text-slate-500 truncate mt-0.5">
+                                รุ่นเดิม: {res.suggestedDevice.brand} {res.suggestedDevice.model}
+                              </div>
+                            )}
+                          </div>
+                          <span className="shrink-0 text-[10px] font-bold text-blue-600 dark:text-blue-400 group-hover:translate-x-0.5 transition-transform">
+                            เลือก →
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div>
@@ -547,18 +966,79 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
                 </div>
               </div>
 
-              <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  รุ่น (Model) <span className="text-rose-500">*</span>
-                </label>
+              <div ref={modelInputWrapperRef} className="relative">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300">
+                    รุ่น (Model) <span className="text-rose-500">*</span>
+                  </label>
+                  {modelSuggestions.length > 0 && (
+                    <span className="text-[10px] text-purple-600 dark:text-purple-400 font-bold flex items-center gap-0.5">
+                      <Sparkles className="w-3 h-3" />
+                      <span>มีประวัติ {modelSuggestions.length} เครื่อง</span>
+                    </span>
+                  )}
+                </div>
                 <input
                   type="text"
                   required
                   placeholder="เช่น EcoTank L3150, TUF F15, G3010"
                   value={model}
-                  onChange={e => setModel(e.target.value)}
+                  onChange={e => {
+                    setModel(e.target.value);
+                    setShowModelSuggestions(true);
+                  }}
+                  onFocus={() => setShowModelSuggestions(true)}
                   className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-blue-500 text-slate-800 dark:text-white"
                 />
+
+                {/* Model Auto-Suggestions Dropdown */}
+                {showModelSuggestions && modelSuggestions.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-purple-300 dark:border-purple-700 overflow-hidden divide-y divide-slate-100 dark:divide-slate-700 animate-in fade-in duration-150">
+                    <div className="px-3 py-1.5 bg-purple-50 dark:bg-purple-950 flex items-center justify-between text-[11px] text-purple-700 dark:text-purple-300 font-bold">
+                      <span className="flex items-center gap-1">
+                        <History className="w-3.5 h-3.5 text-purple-500" />
+                        <span>พบประวัติรุ่นนี้เคยส่งซ่อม ({modelSuggestions.length} เครื่อง)</span>
+                      </span>
+                      <span className="text-[10px] text-slate-500">คลิกเพื่อดึงข้อมูลเครื่องและเจ้าของ</span>
+                    </div>
+                    <div className="max-h-56 overflow-y-auto">
+                      {modelSuggestions.map(res => (
+                        <button
+                          key={`${res.customer.key}-${res.suggestedDevice?.model}-${res.suggestedDevice?.serialNumber}`}
+                          type="button"
+                          onClick={() => handleSelectCustomerProfile(res.customer, res.suggestedDevice)}
+                          className="w-full text-left px-3 py-2.5 hover:bg-purple-50/80 dark:hover:bg-slate-700/70 transition-colors flex items-start justify-between gap-2 cursor-pointer group"
+                        >
+                          <div className="min-w-0">
+                            <div className="font-bold text-slate-800 dark:text-white text-xs flex items-center gap-1.5">
+                              <span className="text-purple-600 dark:text-purple-400 font-extrabold">
+                                {res.suggestedDevice?.brand} {res.suggestedDevice?.model}
+                              </span>
+                              {res.suggestedDevice?.serialNumber && (
+                                <span className="font-mono text-[10px] text-slate-500 bg-slate-100 dark:bg-slate-700 px-1 rounded">
+                                  {res.suggestedDevice.serialNumber}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-slate-600 dark:text-slate-400 flex items-center gap-1.5 mt-0.5">
+                              <span>เจ้าของ: <strong className="text-slate-800 dark:text-slate-200">{res.customer.customerName}</strong></span>
+                              <span>•</span>
+                              <span className="font-mono">{res.customer.customerPhone}</span>
+                            </div>
+                            {res.suggestedDevice?.problemDescription && (
+                              <div className="text-[10px] text-slate-400 truncate mt-0.5 max-w-xs">
+                                อาการเดิม: {res.suggestedDevice.problemDescription}
+                              </div>
+                            )}
+                          </div>
+                          <span className="shrink-0 text-[10px] font-bold text-purple-600 dark:text-purple-400 group-hover:translate-x-0.5 transition-transform">
+                            ดึงข้อมูล →
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div>
