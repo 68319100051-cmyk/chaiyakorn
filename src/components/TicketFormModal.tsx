@@ -619,12 +619,13 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
       const dueDateObj = new Date();
       dueDateObj.setDate(dueDateObj.getDate() + (govCreditDays || 30));
       govCreditInfo = {
+        ...(ticketToEdit?.govCreditInfo || {}),
         agencyName: govAgencyName.trim() || customerName.trim(),
         taxId: govTaxId.trim() || undefined,
         department: govDepartment.trim() || undefined,
         orderNumber: govOrderNumber.trim() || undefined,
         creditDays: govCreditDays || 30,
-        dueDate: dueDateObj.toISOString().split('T')[0],
+        dueDate: ticketToEdit?.govCreditInfo?.dueDate || dueDateObj.toISOString().split('T')[0],
         billingStatus: ticketToEdit?.govCreditInfo?.billingStatus || (isPaid ? 'paid' : 'pending_billing')
       };
     }

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   RepairTicket,
   DeviceType,
@@ -25,12 +25,16 @@ import {
   Tag,
   Calendar,
   Shield,
-  ShieldCheck
+  ShieldCheck,
+  Building2,
+  Wrench
 } from 'lucide-react';
 import { calculateTicketWarranty } from '../utils/warranty';
+import { getGovCreditDueStatus } from '../utils/govCredit';
 
 interface RepairTicketsProps {
   tickets: RepairTicket[];
+  initialViewPage?: 'active' | 'closed';
   onNewTicket: () => void;
   onEditTicket: (ticket: RepairTicket) => void;
   onDeleteTicket: (ticketId: string) => void;
@@ -43,6 +47,7 @@ interface RepairTicketsProps {
 
 export const RepairTickets: React.FC<RepairTicketsProps> = ({
   tickets,
+  initialViewPage = 'active',
   onNewTicket,
   onEditTicket,
   onDeleteTicket,
@@ -56,14 +61,37 @@ export const RepairTickets: React.FC<RepairTicketsProps> = ({
   const [selectedDevice, setSelectedDevice] = useState<'all' | DeviceType>('all');
   const [selectedStatus, setSelectedStatus] = useState<'all' | RepairStatus>('all');
   const [warrantyFilter, setWarrantyFilter] = useState<'all' | 'under_warranty' | 'claim'>('all');
+  const [govCreditFilter, setGovCreditFilter] = useState<boolean>(false);
+  const [viewPage, setViewPage] = useState<'active' | 'closed' | 'all'>(initialViewPage);
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
+
+  useEffect(() => {
+    if (initialViewPage) {
+      setViewPage(initialViewPage);
+    }
+  }, [initialViewPage]);
   
   // Quick discount modal state
   const [discountModalTicket, setDiscountModalTicket] = useState<RepairTicket | null>(null);
   const [quickDiscountAmount, setQuickDiscountAmount] = useState<string>('0');
   const [quickDiscountMode, setQuickDiscountMode] = useState<'baht' | 'percent'>('baht');
 
-  // Warranty counts
+  // Active vs Closed counts
+  const activeTicketsCount = useMemo(() => {
+    return tickets.filter(t => t.status !== 'completed' && t.status !== 'cancelled').length;
+  }, [tickets]);
+
+  const closedTicketsCount = useMemo(() => {
+    return tickets.filter(t => t.status === 'completed' || t.status === 'cancelled').length;
+  }, [tickets]);
+
+  const totalClosedRevenue = useMemo(() => {
+    return tickets
+      .filter(t => t.status === 'completed')
+      .reduce((sum, t) => sum + (t.totalAmount || 0), 0);
+  }, [tickets]);
+
+  // Warranty and Gov Credit counts
   const underWarrantyCount = useMemo(() => {
     return tickets.filter(t => {
       const w = calculateTicketWarranty(t);
@@ -75,10 +103,22 @@ export const RepairTickets: React.FC<RepairTicketsProps> = ({
     return tickets.filter(t => Boolean(t.isWarrantyClaim)).length;
   }, [tickets]);
 
-  // Filtered tickets
+  const govCreditCount = useMemo(() => {
+    return tickets.filter(t => t.paymentMethod === 'gov_credit').length;
+  }, [tickets]);
+
+  // Filtered tickets with active vs closed page separation
   const filteredTickets = useMemo(() => {
     return tickets.filter(ticket => {
-      // Search filter
+      // 1. Primary Page Filter: Active vs Closed Bills
+      if (viewPage === 'active' && (ticket.status === 'completed' || ticket.status === 'cancelled')) {
+        return false;
+      }
+      if (viewPage === 'closed' && (ticket.status !== 'completed' && ticket.status !== 'cancelled')) {
+        return false;
+      }
+
+      // 2. Search filter
       const term = searchTerm.trim().toLowerCase();
       const matchSearch =
         !term ||
@@ -89,15 +129,17 @@ export const RepairTickets: React.FC<RepairTicketsProps> = ({
         ticket.model.toLowerCase().includes(term) ||
         (ticket.serialNumber && ticket.serialNumber.toLowerCase().includes(term)) ||
         (ticket.originalTicketNumber && ticket.originalTicketNumber.toLowerCase().includes(term)) ||
+        (ticket.govCreditInfo?.agencyName && ticket.govCreditInfo.agencyName.toLowerCase().includes(term)) ||
+        (ticket.govCreditInfo?.disbursementNumber && ticket.govCreditInfo.disbursementNumber.toLowerCase().includes(term)) ||
         ticket.problemDescription.toLowerCase().includes(term);
 
-      // Device filter
+      // 3. Device filter
       const matchDevice = selectedDevice === 'all' || ticket.deviceType === selectedDevice;
 
-      // Status filter
+      // 4. Status filter
       const matchStatus = selectedStatus === 'all' || ticket.status === selectedStatus;
 
-      // Warranty filter
+      // 5. Warranty filter
       let matchWarranty = true;
       if (warrantyFilter === 'under_warranty') {
         const w = calculateTicketWarranty(ticket);
@@ -106,19 +148,41 @@ export const RepairTickets: React.FC<RepairTicketsProps> = ({
         matchWarranty = Boolean(ticket.isWarrantyClaim);
       }
 
-      return matchSearch && matchDevice && matchStatus && matchWarranty;
-    });
-  }, [tickets, searchTerm, selectedDevice, selectedStatus, warrantyFilter]);
+      // 6. Gov Credit filter
+      const matchGovCredit = !govCreditFilter || ticket.paymentMethod === 'gov_credit';
 
-  const statusOptions: { value: 'all' | RepairStatus; label: string }[] = [
-    { value: 'all', label: 'ทั้งหมด' },
-    { value: 'pending', label: 'รับเครื่องแล้ว' },
-    { value: 'diagnosing', label: 'กำลังตรวจเช็ค/ซ่อม' },
-    { value: 'waiting_parts', label: 'รออะไหล่' },
-    { value: 'ready_pickup', label: 'พร้อมส่งมอบ' },
-    { value: 'completed', label: 'ส่งมอบแล้ว' },
-    { value: 'cancelled', label: 'ยกเลิก' }
-  ];
+      return matchSearch && matchDevice && matchStatus && matchWarranty && matchGovCredit;
+    });
+  }, [tickets, searchTerm, selectedDevice, selectedStatus, warrantyFilter, govCreditFilter, viewPage]);
+
+  // Dynamic status options depending on active page vs closed page
+  const statusOptions = useMemo(() => {
+    if (viewPage === 'active') {
+      return [
+        { value: 'all' as const, label: 'ทั้งหมด (กำลังซ่อม)' },
+        { value: 'pending' as const, label: '1. รับเครื่องแล้ว' },
+        { value: 'diagnosing' as const, label: '2. กำลังตรวจเช็ค/ซ่อม' },
+        { value: 'waiting_parts' as const, label: '3. รออะไหล่' },
+        { value: 'ready_pickup' as const, label: '4. พร้อมส่งมอบ' }
+      ];
+    }
+    if (viewPage === 'closed') {
+      return [
+        { value: 'all' as const, label: 'ทั้งหมด (ปิดบิลแล้ว)' },
+        { value: 'completed' as const, label: 'ส่งมอบแล้ว / ปิดงาน' },
+        { value: 'cancelled' as const, label: 'ยกเลิก / คืนเครื่อง' }
+      ];
+    }
+    return [
+      { value: 'all' as const, label: 'ทั้งหมด' },
+      { value: 'pending' as const, label: 'รับเครื่องแล้ว' },
+      { value: 'diagnosing' as const, label: 'กำลังตรวจเช็ค/ซ่อม' },
+      { value: 'waiting_parts' as const, label: 'รออะไหล่' },
+      { value: 'ready_pickup' as const, label: 'พร้อมส่งมอบ' },
+      { value: 'completed' as const, label: 'ส่งมอบแล้ว' },
+      { value: 'cancelled' as const, label: 'ยกเลิก' }
+    ];
+  }, [viewPage]);
 
   return (
     <div className="space-y-5">
@@ -126,13 +190,29 @@ export const RepairTickets: React.FC<RepairTicketsProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
-            <span>รายการงานซ่อม</span>
-            <span className="text-xs px-2.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 font-semibold">
-              {filteredTickets.length} / {tickets.length} รายการ
+            <span>
+              {viewPage === 'active'
+                ? 'งานซ่อมที่กำลังดำเนินการ'
+                : viewPage === 'closed'
+                ? 'รายการที่ปิดบิลแล้ว / ส่งมอบเรียบร้อย'
+                : 'รายการงานซ่อมทั้งหมด'}
+            </span>
+            <span className={`text-xs px-2.5 py-0.5 rounded-full font-bold ${
+              viewPage === 'active'
+                ? 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300'
+                : viewPage === 'closed'
+                ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+            }`}>
+              {filteredTickets.length} รายการ
             </span>
           </h1>
           <p className="text-xs text-slate-500">
-            จัดการสถานะงานซ่อมคอมพิวเตอร์ โน้ตบุ๊ก ปริ้นเตอร์ แจ้งเตือน LINE และพิมพ์ใบรับซ่อม
+            {viewPage === 'active'
+              ? 'เครื่องซ่อมที่อยู่ระหว่างดำเนินการในร้าน (รายการที่ปิดบิลแล้วจะแยกไปอยู่อีกหน้าอัตโนมัติ)'
+              : viewPage === 'closed'
+              ? 'ประวัติเครื่องซ่อมที่ปิดบิลและส่งมอบแล้ว สามารถพิมพ์ใบเสร็จและตรวจสอบงานประกันได้'
+              : 'แสดงงานซ่อมทั้งหมดทั้งที่กำลังซ่อมและที่ปิดบิลแล้ว'}
           </p>
         </div>
 
@@ -143,6 +223,66 @@ export const RepairTickets: React.FC<RepairTicketsProps> = ({
           <Plus className="w-4 h-4" />
           <span>เปิดใบรับซ่อมใหม่</span>
         </button>
+      </div>
+
+      {/* Main Page View Tabs (Active vs Closed Separation) */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-white dark:bg-slate-800 p-2 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <button
+            type="button"
+            onClick={() => {
+              setViewPage('active');
+              setSelectedStatus('all');
+            }}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+              viewPage === 'active'
+                ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
+                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700/60'
+            }`}
+          >
+            <Wrench className="w-4 h-4" />
+            <span>งานที่กำลังดำเนินการ ({activeTicketsCount})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setViewPage('closed');
+              setSelectedStatus('all');
+            }}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+              viewPage === 'closed'
+                ? 'bg-emerald-600 text-white shadow-md shadow-emerald-500/20'
+                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700/60'
+            }`}
+          >
+            <CheckCircle className="w-4 h-4" />
+            <span>รายการที่ปิดบิลแล้ว ({closedTicketsCount})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setViewPage('all');
+              setSelectedStatus('all');
+            }}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+              viewPage === 'all'
+                ? 'bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900 shadow-xs'
+                : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700/60'
+            }`}
+          >
+            <span>รวมทั้งหมด ({tickets.length})</span>
+          </button>
+        </div>
+
+        {viewPage === 'closed' && (
+          <div className="flex items-center gap-2 text-xs text-slate-500 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/40 rounded-xl border border-emerald-200 dark:border-emerald-800/60">
+            <span className="font-semibold text-emerald-800 dark:text-emerald-300">
+              ยอดเงินปิดบิลรวม: ฿{totalClosedRevenue.toLocaleString()} บาท
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Filter and Search Bar */}
@@ -223,7 +363,7 @@ export const RepairTickets: React.FC<RepairTicketsProps> = ({
             const isSelected = selectedStatus === opt.value;
             const count =
               opt.value === 'all'
-                ? tickets.length
+                ? (viewPage === 'active' ? activeTicketsCount : viewPage === 'closed' ? closedTicketsCount : tickets.length)
                 : tickets.filter(t => t.status === opt.value).length;
             return (
               <button
@@ -278,6 +418,18 @@ export const RepairTickets: React.FC<RepairTicketsProps> = ({
           >
             <span>งานเคลมประกัน ({warrantyClaimCount})</span>
           </button>
+          <div className="w-[1px] h-4 bg-slate-200 dark:bg-slate-700 mx-1"></div>
+          <button
+            onClick={() => setGovCreditFilter(prev => !prev)}
+            className={`px-2.5 py-1 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer ${
+              govCreditFilter
+                ? 'bg-indigo-600 text-white font-bold shadow-xs'
+                : 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100'
+            }`}
+          >
+            <Building2 className="w-3.5 h-3.5" />
+            <span>🏛️ เครดิตราชการ ({govCreditCount})</span>
+          </button>
         </div>
       </div>
 
@@ -288,29 +440,45 @@ export const RepairTickets: React.FC<RepairTicketsProps> = ({
             <Search className="w-8 h-8" />
           </div>
           <h3 className="text-base font-bold text-slate-800 dark:text-white">
-            ไม่พบรายการงานซ่อม
+            {viewPage === 'closed'
+              ? 'ไม่พบรายการที่ปิดบิลแล้ว'
+              : 'ไม่พบรายการงานซ่อม'}
           </h3>
           <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-            ไม่พบงานซ่อมที่ตรงกับเงื่อนไขการค้นหา คุณสามารถล้างตัวกรองหรือเปิดใบรับซ่อมใหม่ได้ทันที
+            {viewPage === 'closed'
+              ? 'ยังไม่มีรายการที่ปิดบิลตามเงื่อนไขที่เลือก เมื่อเปลี่ยนสถานะงานซ่อมเป็น "ส่งมอบแล้ว / ปิดงาน" รายการจะย้ายมาแสดงที่หน้านี้โดยอัตโนมัติ'
+              : 'ไม่พบงานซ่อมที่ตรงกับเงื่อนไขการค้นหา คุณสามารถล้างตัวกรองหรือเปิดใบรับซ่อมใหม่ได้ทันที'}
           </p>
           <div className="mt-4 flex items-center justify-center gap-3">
-            <button
-              onClick={() => {
-                setSearchTerm('');
-                setSelectedDevice('all');
-                setSelectedStatus('all');
-                setWarrantyFilter('all');
-              }}
-              className="px-4 py-2 rounded-lg bg-slate-100 dark:bg-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-200 cursor-pointer"
-            >
-              ล้างตัวกรอง
-            </button>
-            <button
-              onClick={onNewTicket}
-              className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-xs font-semibold text-white shadow-sm cursor-pointer"
-            >
-              + เปิดใบรับซ่อมใหม่
-            </button>
+            {viewPage === 'closed' ? (
+              <button
+                onClick={() => setViewPage('active')}
+                className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-xs font-semibold text-white shadow-sm cursor-pointer"
+              >
+                ดูงานที่กำลังดำเนินการ ({activeTicketsCount})
+              </button>
+            ) : (
+              <>
+                <button
+                  onClick={() => {
+                    setSearchTerm('');
+                    setSelectedDevice('all');
+                    setSelectedStatus('all');
+                    setWarrantyFilter('all');
+                    setGovCreditFilter(false);
+                  }}
+                  className="px-4 py-2 rounded-lg bg-slate-100 dark:bg-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-200 cursor-pointer"
+                >
+                  ล้างตัวกรอง
+                </button>
+                <button
+                  onClick={onNewTicket}
+                  className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-xs font-semibold text-white shadow-sm cursor-pointer"
+                >
+                  + เปิดใบรับซ่อมใหม่
+                </button>
+              </>
+            )}
           </div>
         </div>
       ) : (
@@ -391,6 +559,29 @@ export const RepairTickets: React.FC<RepairTicketsProps> = ({
                         </span>
                       )}
                     </div>
+
+                    {/* Government Credit Status Pill */}
+                    {ticket.paymentMethod === 'gov_credit' && (
+                      <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 dark:bg-purple-950 text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                          <Building2 className="w-3 h-3 text-purple-600" />
+                          <span>{ticket.govCreditInfo?.agencyName || 'เครดิตราชการ'}</span>
+                        </span>
+                        {ticket.govCreditInfo?.dueDate && (() => {
+                          const dueStatus = getGovCreditDueStatus(ticket.govCreditInfo.dueDate, ticket.govCreditInfo.billingStatus);
+                          return (
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border ${dueStatus.badgeClass}`}>
+                              {dueStatus.badgeLabel}
+                            </span>
+                          );
+                        })()}
+                        {ticket.govCreditInfo?.disbursementNumber && (
+                          <span className="text-[10px] font-mono text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 px-1.5 py-0.5 rounded border border-indigo-200 dark:border-indigo-800 font-semibold">
+                            {ticket.govCreditInfo.disbursementNumber}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Device & Problem Details */}

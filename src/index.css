@@ -10,13 +10,20 @@
 @media print {
   @page {
     size: A5 portrait;
-    margin: 5mm;
+    margin: 4mm;
   }
 
+  html,
   body {
     background: #ffffff !important;
     color: #000000 !important;
-    font-size: 10pt;
+    font-size: 9pt;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 148mm !important;
+    height: 210mm !important;
+    max-height: 210mm !important;
+    overflow: hidden !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
@@ -31,7 +38,7 @@
     display: none !important;
   }
 
-  /* Make modal container transparent and top-level */
+  /* Make modal container transparent, top-level, and constrained to A5 */
   .fixed,
   .print-modal-overlay {
     position: static !important;
@@ -39,6 +46,9 @@
     padding: 0 !important;
     margin: 0 !important;
     display: block !important;
+    overflow: hidden !important;
+    width: 148mm !important;
+    max-width: 148mm !important;
   }
 
   .print-modal-card {
@@ -47,17 +57,32 @@
     max-width: 100% !important;
     width: 100% !important;
     background: transparent !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
   }
 
-  /* Force only the A5 receipt to display crisply on 1 page */
-  #printable-receipt-a5 {
+  /* Force only the A5 document to display crisply on EXACTLY 1 page with zero overflow */
+  #printable-receipt-a5,
+  #pos-receipt-print-area,
+  #gov-consolidated-statement,
+  .a5-printable-page {
     display: block !important;
     box-shadow: none !important;
     border: none !important;
     width: 100% !important;
-    max-width: 100% !important;
-    margin: 0 !important;
+    max-width: 140mm !important;
+    max-height: 202mm !important;
+    height: auto !important;
+    margin: 0 auto !important;
     padding: 0 !important;
+    overflow: hidden !important;
+    page-break-inside: avoid !important;
+    page-break-before: avoid !important;
+    page-break-after: avoid !important;
+    break-inside: avoid !important;
+    break-after: avoid !important;
+    box-sizing: border-box !important;
   }
 
   #printable-receipt-slip {
@@ -68,11 +93,5 @@
     margin: 0 auto !important;
     padding: 0 !important;
   }
-
-  #pos-receipt-print-area {
-    display: block !important;
-    box-shadow: none !important;
-    border: none !important;
-    margin: 0 auto !important;
-  }
 }
+

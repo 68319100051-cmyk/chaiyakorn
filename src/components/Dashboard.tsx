@@ -34,6 +34,7 @@ interface DashboardProps {
   onPrintTicket: (ticket: RepairTicket) => void;
   onLineNotify: (ticket: RepairTicket) => void;
   onViewAllTickets: () => void;
+  onViewClosedTickets?: () => void;
   onViewInventory: () => void;
   onOpenGovBilling?: () => void;
 }
@@ -48,6 +49,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onPrintTicket,
   onLineNotify,
   onViewAllTickets,
+  onViewClosedTickets,
   onViewInventory,
   onOpenGovBilling
 }) => {
@@ -247,8 +249,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </p>
         </div>
 
-        {/* Today's Revenue */}
-        <div className="bg-white dark:bg-slate-800/90 rounded-xl p-5 border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-shadow">
+        {/* Today's Revenue & Closed Bills */}
+        <div
+          onClick={onViewClosedTickets}
+          className={`bg-white dark:bg-slate-800/90 rounded-xl p-5 border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-shadow ${
+            onViewClosedTickets ? 'cursor-pointer group' : ''
+          }`}
+          title="คลิกเพื่อดูรายการที่ปิดบิลแล้ว / ส่งมอบแล้ว"
+        >
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
               รายได้ค่าซ่อมวันนี้
@@ -262,9 +270,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
               ฿{todayRevenue.toLocaleString()}
             </span>
           </div>
-          <p className="mt-2 text-xs text-slate-500">
-            ปิดงานส่งมอบแล้ว {completedTodayCount} เครื่องวันนี้
-          </p>
+          <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
+            <span>ปิดงานส่งมอบแล้ว {completedTodayCount} เครื่องวันนี้</span>
+            {onViewClosedTickets && (
+              <span className="text-blue-600 dark:text-blue-400 font-medium group-hover:underline flex items-center gap-0.5">
+                ดูประวัติปิดบิล <ArrowRight className="w-3 h-3" />
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Low Stock Alerts */}

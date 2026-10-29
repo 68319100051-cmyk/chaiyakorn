@@ -386,6 +386,8 @@ class DatabaseService {
       disbursementNumber?: string;
       disbursementDate?: string;
       transferRef?: string;
+      creditDays?: number;
+      dueDate?: string;
     }
   ): Promise<void> {
     const local = getLocal<RepairTicket[]>(LOCAL_STORAGE_KEYS.TICKETS, INITIAL_TICKETS);
@@ -404,7 +406,9 @@ class DatabaseService {
             ...(extra?.notes !== undefined ? { notes: extra.notes } : {}),
             ...(extra?.disbursementNumber !== undefined ? { disbursementNumber: extra.disbursementNumber } : {}),
             ...(extra?.disbursementDate !== undefined ? { disbursementDate: extra.disbursementDate } : {}),
-            ...(extra?.transferRef !== undefined ? { transferRef: extra.transferRef } : {})
+            ...(extra?.transferRef !== undefined ? { transferRef: extra.transferRef } : {}),
+            ...(extra?.creditDays !== undefined ? { creditDays: extra.creditDays } : {}),
+            ...(extra?.dueDate !== undefined ? { dueDate: extra.dueDate } : {})
           }
         : undefined;
 
@@ -698,6 +702,8 @@ class DatabaseService {
       disbursementNumber?: string;
       disbursementDate?: string;
       transferRef?: string;
+      creditDays?: number;
+      dueDate?: string;
     }
   ): Promise<void> {
     const local = getLocal<POSSaleRecord[]>(LOCAL_STORAGE_KEYS.POS_SALES, []);
@@ -716,7 +722,9 @@ class DatabaseService {
             ...(extra?.notes !== undefined ? { notes: extra.notes } : {}),
             ...(extra?.disbursementNumber !== undefined ? { disbursementNumber: extra.disbursementNumber } : {}),
             ...(extra?.disbursementDate !== undefined ? { disbursementDate: extra.disbursementDate } : {}),
-            ...(extra?.transferRef !== undefined ? { transferRef: extra.transferRef } : {})
+            ...(extra?.transferRef !== undefined ? { transferRef: extra.transferRef } : {}),
+            ...(extra?.creditDays !== undefined ? { creditDays: extra.creditDays } : {}),
+            ...(extra?.dueDate !== undefined ? { dueDate: extra.dueDate } : {})
           }
         : undefined;
 

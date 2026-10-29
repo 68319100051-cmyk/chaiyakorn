@@ -1,8 +1,9 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { RepairTicket, POSSaleRecord, ShopSettings, GovBillingStatus } from '../types';
+import { RepairTicket, POSSaleRecord, ShopSettings, GovBillingStatus, GovDocumentType } from '../types';
 import { generatePromptPayQRDataUrl } from '../utils/promptpay';
 import { bahtText } from '../utils/bahtText';
 import { dbService } from '../services/db';
+import { getGovCreditDueStatus, CREDIT_DAYS_PRESETS } from '../utils/govCredit';
 import {
   X,
   Printer,
@@ -20,7 +21,15 @@ import {
   FileCheck,
   Receipt,
   Wrench,
-  Search
+  Search,
+  Calendar,
+  AlertTriangle,
+  Edit3,
+  CreditCard,
+  Save,
+  Check,
+  Info,
+  DollarSign
 } from 'lucide-react';
 
 export interface ConsolidatedBillItem {
@@ -38,6 +47,12 @@ export interface ConsolidatedBillItem {
   creditDays: number;
   dueDate: string;
   billingStatus: GovBillingStatus;
+  billedDate?: string;
+  paidDate?: string;
+  disbursementNumber?: string;
+  disbursementDate?: string;
+  transferRef?: string;
+  notes?: string;
   itemsDescription: string;
   subtotal: number;
   discount: number;
@@ -59,6 +74,7 @@ export interface ConsolidatedAgencyGroup {
   pendingCount: number;
   billedCount: number;
   paidCount: number;
+  overdueCount: number;
 }
 
 interface GovConsolidatedBillingModalProps {
@@ -80,7 +96,22 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
   const [selectedBillIds, setSelectedBillIds] = useState<Set<string>>(new Set());
   const [promptPayQrUrl, setPromptPayQrUrl] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState<string>('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending_billing' | 'billed' | 'paid' | 'overdue'>('all');
+  const [docType, setDocType] = useState<GovDocumentType>('invoice');
   const [isUpdatingStatus, setIsUpdatingStatus] = useState<boolean>(false);
+  
+  // Disbursement Record Modal / Drawer State
+  const [isDisbursementModalOpen, setIsDisbursementModalOpen] = useState<boolean>(false);
+  const [targetBillForEdit, setTargetBillForEdit] = useState<ConsolidatedBillItem | null>(null); // null = edit all active selected bills
+  const [formDisbursementNumber, setFormDisbursementNumber] = useState<string>('');
+  const [formDisbursementDate, setFormDisbursementDate] = useState<string>('');
+  const [formBillingStatus, setFormBillingStatus] = useState<GovBillingStatus>('billed');
+  const [formPaidDate, setFormPaidDate] = useState<string>('');
+  const [formTransferRef, setFormTransferRef] = useState<string>('');
+  const [formCreditDays, setFormCreditDays] = useState<number>(30);
+  const [formDueDate, setFormDueDate] = useState<string>('');
+  const [formNotes, setFormNotes] = useState<string>('');
+
   const printAreaRef = useRef<HTMLDivElement>(null);
 
   // 1. Extract and normalize all Government Credit bills from POS and Repair Tickets
@@ -111,6 +142,12 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
           creditDays: info?.creditDays || 30,
           dueDate: info?.dueDate || '',
           billingStatus: info?.billingStatus || 'pending_billing',
+          billedDate: info?.billedDate,
+          paidDate: info?.paidDate,
+          disbursementNumber: info?.disbursementNumber,
+          disbursementDate: info?.disbursementDate,
+          transferRef: info?.transferRef,
+          notes: info?.notes,
           itemsDescription: itemsDesc || 'พัสดุขายหน้าร้าน',
           subtotal: sale.subtotal,
           discount: sale.discount,
@@ -147,6 +184,12 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
           creditDays: info?.creditDays || 30,
           dueDate: info?.dueDate || '',
           billingStatus: info?.billingStatus || (ticket.isPaid ? 'paid' : 'pending_billing'),
+          billedDate: info?.billedDate,
+          paidDate: info?.paidDate,
+          disbursementNumber: info?.disbursementNumber,
+          disbursementDate: info?.disbursementDate,
+          transferRef: info?.transferRef,
+          notes: info?.notes,
           itemsDescription: serviceDesc,
           subtotal: (ticket.laborCost || 0) + (ticket.partsCost || 0),
           discount: Number(ticket.discount) || 0,
@@ -158,13 +201,36 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
     return list.sort((a, b) => new Date(b.rawDate).getTime() - new Date(a.rawDate).getTime());
   }, [posSales, tickets]);
 
+  // Overall counts across all bills
+  const globalCounts = useMemo(() => {
+    let pending = 0;
+    let billed = 0;
+    let paid = 0;
+    let overdue = 0;
+
+    for (const b of allGovBills) {
+      if (b.billingStatus === 'paid') {
+        paid++;
+      } else {
+        const dueInfo = getGovCreditDueStatus(b.dueDate, b.billingStatus);
+        if (dueInfo.isOverdue) {
+          overdue++;
+        }
+        if (b.billingStatus === 'billed') {
+          billed++;
+        } else {
+          pending++;
+        }
+      }
+    }
+    return { all: allGovBills.length, pending, billed, paid, overdue };
+  }, [allGovBills]);
+
   // 2. Group bills by Tax ID (CRITICAL: "ถ้า เลขผู้เสียภาษี ในแต่ละบิล ตรงกัน ให้มารวมเป็นบิลเดียว และรวมยอดต่างๆของทุกบิลที่เลขตรงกัน")
   const groupedAgencies = useMemo<ConsolidatedAgencyGroup[]>(() => {
     const groupMap = new Map<string, ConsolidatedBillItem[]>();
 
     for (const bill of allGovBills) {
-      // Grouping key: If Tax ID exists and is at least 5 digits, group strictly by Tax ID!
-      // Otherwise fallback to cleaned Agency Name
       const cleanTax = bill.taxId.trim();
       const key = cleanTax.length >= 5
         ? `tax-${cleanTax}`
@@ -179,7 +245,6 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
     const groups: ConsolidatedAgencyGroup[] = [];
 
     groupMap.forEach((bills, key) => {
-      // Representative agency info (from latest bill)
       const primaryBill = bills[0];
       const totalSubtotal = bills.reduce((sum, b) => sum + b.subtotal, 0);
       const totalDiscount = bills.reduce((sum, b) => sum + b.discount, 0);
@@ -188,6 +253,11 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
       const pendingCount = bills.filter(b => b.billingStatus === 'pending_billing').length;
       const billedCount = bills.filter(b => b.billingStatus === 'billed').length;
       const paidCount = bills.filter(b => b.billingStatus === 'paid').length;
+      const overdueCount = bills.filter(b => {
+        if (b.billingStatus === 'paid') return false;
+        const d = getGovCreditDueStatus(b.dueDate, b.billingStatus);
+        return d.isOverdue;
+      }).length;
 
       groups.push({
         groupKey: key,
@@ -203,11 +273,11 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
         grandTotal,
         pendingCount,
         billedCount,
-        paidCount
+        paidCount,
+        overdueCount
       });
     });
 
-    // Sort by grand total or pending bills
     return groups.sort((a, b) => b.grandTotal - a.grandTotal);
   }, [allGovBills]);
 
@@ -217,7 +287,6 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
       if (!selectedGroupKey || !groupedAgencies.some(g => g.groupKey === selectedGroupKey)) {
         const firstKey = groupedAgencies[0].groupKey;
         setSelectedGroupKey(firstKey);
-        // Select all bills in this group by default
         setSelectedBillIds(new Set(groupedAgencies[0].bills.map(b => b.id)));
       }
     }
@@ -233,11 +302,24 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
     return groupedAgencies.find(g => g.groupKey === selectedGroupKey) || null;
   }, [groupedAgencies, selectedGroupKey]);
 
-  // Filter bills inside selected group based on checkbox selection
+  // Filter bills inside selected group based on checkbox selection AND active statusFilter
   const activeStatementBills = useMemo(() => {
     if (!selectedGroup) return [];
-    return selectedGroup.bills.filter(b => selectedBillIds.has(b.id));
-  }, [selectedGroup, selectedBillIds]);
+    return selectedGroup.bills.filter(b => {
+      const isSelected = selectedBillIds.has(b.id);
+      if (!isSelected) return false;
+
+      if (statusFilter === 'all') return true;
+      if (statusFilter === 'pending_billing') return b.billingStatus === 'pending_billing';
+      if (statusFilter === 'billed') return b.billingStatus === 'billed';
+      if (statusFilter === 'paid') return b.billingStatus === 'paid';
+      if (statusFilter === 'overdue') {
+        if (b.billingStatus === 'paid') return false;
+        return getGovCreditDueStatus(b.dueDate, b.billingStatus).isOverdue;
+      }
+      return true;
+    });
+  }, [selectedGroup, selectedBillIds, statusFilter]);
 
   const statementSubtotal = activeStatementBills.reduce((sum, b) => sum + b.subtotal, 0);
   const statementDiscount = activeStatementBills.reduce((sum, b) => sum + b.discount, 0);
@@ -284,21 +366,97 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
     window.print();
   };
 
+  // Open Disbursement Recording Modal
+  const handleOpenDisbursementModal = (bill?: ConsolidatedBillItem) => {
+    if (bill) {
+      setTargetBillForEdit(bill);
+      setFormDisbursementNumber(bill.disbursementNumber || '');
+      setFormDisbursementDate(bill.disbursementDate || new Date().toISOString().split('T')[0]);
+      setFormBillingStatus(bill.billingStatus);
+      setFormPaidDate(bill.paidDate || (bill.billingStatus === 'paid' ? new Date().toISOString().split('T')[0] : ''));
+      setFormTransferRef(bill.transferRef || '');
+      setFormCreditDays(bill.creditDays || 30);
+      setFormDueDate(bill.dueDate || '');
+      setFormNotes(bill.notes || '');
+    } else {
+      // Batch mode for active bills
+      if (activeStatementBills.length === 0) {
+        alert('กรุณาเลือกบิลอย่างน้อย 1 รายการเพื่อบันทึกข้อมูล');
+        return;
+      }
+      setTargetBillForEdit(null);
+      // Pre-fill with common or latest data
+      const sample = activeStatementBills[0];
+      setFormDisbursementNumber(sample.disbursementNumber || '');
+      setFormDisbursementDate(sample.disbursementDate || new Date().toISOString().split('T')[0]);
+      setFormBillingStatus(sample.billingStatus === 'paid' ? 'paid' : 'billed');
+      setFormPaidDate(sample.paidDate || '');
+      setFormTransferRef(sample.transferRef || '');
+      setFormCreditDays(sample.creditDays || 30);
+      setFormDueDate(sample.dueDate || '');
+      setFormNotes(sample.notes || '');
+    }
+    setIsDisbursementModalOpen(true);
+  };
+
+  // Save Disbursement Info to Database
+  const handleSaveDisbursement = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const targetBills = targetBillForEdit ? [targetBillForEdit] : activeStatementBills;
+    if (targetBills.length === 0) return;
+
+    try {
+      setIsUpdatingStatus(true);
+      const extraPayload = {
+        disbursementNumber: formDisbursementNumber.trim() || undefined,
+        disbursementDate: formDisbursementDate.trim() || undefined,
+        paidDate: formBillingStatus === 'paid' ? (formPaidDate.trim() || new Date().toISOString().split('T')[0]) : undefined,
+        billedDate: (formBillingStatus === 'billed' || formBillingStatus === 'paid') ? new Date().toISOString().split('T')[0] : undefined,
+        transferRef: formTransferRef.trim() || undefined,
+        creditDays: formCreditDays || 30,
+        dueDate: formDueDate.trim() || undefined,
+        notes: formNotes.trim() || undefined
+      };
+
+      for (const bill of targetBills) {
+        if (bill.source === 'pos') {
+          await dbService.updatePOSSaleBillingStatus(bill.id, formBillingStatus, extraPayload);
+        } else {
+          await dbService.updateTicketBillingStatus(bill.id, formBillingStatus, extraPayload);
+        }
+      }
+
+      setIsDisbursementModalOpen(false);
+    } catch (err) {
+      console.error('Failed to update disbursement information:', err);
+      alert('เกิดข้อผิดพลาดในการบันทึกข้อมูล');
+    } finally {
+      setIsUpdatingStatus(false);
+    }
+  };
+
   // Batch update billing status for all currently active/selected bills in this group
   const handleBatchUpdateStatus = async (targetStatus: GovBillingStatus) => {
     if (activeStatementBills.length === 0) return;
 
-    const label = targetStatus === 'billed' ? 'วางบิลแล้ว' : targetStatus === 'paid' ? 'ชำระเงิน/เบิกจ่ายแล้ว' : 'รอวางบิล';
+    const label = targetStatus === 'billed' ? 'รอเบิกเงินฎีกา / วางบิลแล้ว' : targetStatus === 'paid' ? 'ชำระเงิน/เงินโอนเข้าแล้ว' : 'ค้างชำระ / รอวางบิล';
     const confirmed = window.confirm(`ต้องการปรับสถานะทั้ง ${activeStatementBills.length} บิล เป็น "${label}" หรือไม่?`);
     if (!confirmed) return;
 
     try {
       setIsUpdatingStatus(true);
+      const now = new Date().toISOString().split('T')[0];
       for (const bill of activeStatementBills) {
+        const extraPayload = targetStatus === 'paid'
+          ? { paidDate: bill.paidDate || now }
+          : targetStatus === 'billed'
+          ? { billedDate: bill.billedDate || now }
+          : {};
+
         if (bill.source === 'pos') {
-          await dbService.updatePOSSaleBillingStatus(bill.id, targetStatus);
+          await dbService.updatePOSSaleBillingStatus(bill.id, targetStatus, extraPayload);
         } else {
-          await dbService.updateTicketBillingStatus(bill.id, targetStatus);
+          await dbService.updateTicketBillingStatus(bill.id, targetStatus, extraPayload);
         }
       }
     } catch (err) {
@@ -309,16 +467,31 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
     }
   };
 
-  // Filter groups in sidebar by search
+  // Filter groups in sidebar by search and active status filter
   const filteredGroups = groupedAgencies.filter(g => {
+    // 1. Search term filter
     const term = searchTerm.trim().toLowerCase();
-    if (!term) return true;
-    return (
+    const matchSearch = !term || (
       g.agencyName.toLowerCase().includes(term) ||
       g.taxId.includes(term) ||
       g.department.toLowerCase().includes(term) ||
-      g.bills.some(b => b.docNumber.toLowerCase().includes(term) || b.orderNumber.toLowerCase().includes(term))
+      g.bills.some(b => 
+        b.docNumber.toLowerCase().includes(term) || 
+        b.orderNumber.toLowerCase().includes(term) ||
+        (b.disbursementNumber && b.disbursementNumber.toLowerCase().includes(term))
+      )
     );
+
+    if (!matchSearch) return false;
+
+    // 2. Status filter
+    if (statusFilter === 'all') return true;
+    if (statusFilter === 'pending_billing') return g.pendingCount > 0;
+    if (statusFilter === 'billed') return g.billedCount > 0;
+    if (statusFilter === 'paid') return g.paidCount > 0;
+    if (statusFilter === 'overdue') return g.overdueCount > 0;
+
+    return true;
   });
 
   const todayThaiDate = new Date().toLocaleDateString('th-TH', {
@@ -327,7 +500,44 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
     year: 'numeric'
   });
 
-  const statementDocNo = `BILL-${(selectedGroup?.taxId || 'GOV').slice(-6)}-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}`;
+  // Consolidated document sequence & titles
+  const docSeq = (selectedGroup?.taxId || 'GOV').slice(-6) + '-' + new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const documentNumbers: Record<GovDocumentType, string> = {
+    quotation: `QT-GOV-${docSeq}`,
+    invoice: `INV-GOV-${docSeq}`,
+    receipt: `REC-GOV-${docSeq}`,
+    work_order: `BILL-GOV-${docSeq}`
+  };
+
+  const documentTitles: Record<GovDocumentType, { th: string; en: string; badge: string; desc: string }> = {
+    quotation: {
+      th: 'ใบเสนอราคารวม (หน่วยงานราชการ/สถานศึกษา)',
+      en: 'CONSOLIDATED QUOTATION',
+      badge: 'bg-blue-800 text-white',
+      desc: 'เอกสารเสนอราคารวมเพื่อขออนุมัติงบประมาณก่อนดำเนินการซ่อมและส่งมอบพัสดุ'
+    },
+    invoice: {
+      th: 'ใบแจ้งหนี้ / ใบวางบิลรวม (หน่วยงานราชการ)',
+      en: 'CONSOLIDATED INVOICE / BILLING NOTE',
+      badge: 'bg-purple-900 text-white',
+      desc: 'เอกสารเรียกเก็บเงินตามระเบียบพัสดุราชการ รวมบิลตามเลขประจำตัวผู้เสียภาษี'
+    },
+    receipt: {
+      th: 'ใบเสร็จรับเงินรวม (หน่วยงานราชการ)',
+      en: 'CONSOLIDATED OFFICIAL RECEIPT',
+      badge: 'bg-emerald-800 text-white',
+      desc: 'เอกสารใบเสร็จรับเงินอย่างเป็นทางการเมื่อเงินโอนเข้าหรือเบิกจ่ายเงินฎีกาเรียบร้อย'
+    },
+    work_order: {
+      th: 'ใบวางบิล / ใบส่งมอบงานรวม',
+      en: 'BILLING STATEMENT & WORK ORDER',
+      badge: 'bg-slate-800 text-white',
+      desc: 'หลักฐานการส่งมอบงานและรับพัสดุราชการ'
+    }
+  };
+
+  const activeDocTitle = documentTitles[docType] || documentTitles.invoice;
+  const activeStatementDocNo = documentNumbers[docType] || documentNumbers.invoice;
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/75 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 print-modal-overlay">
@@ -347,7 +557,7 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
                 </span>
               </h2>
               <p className="text-xs text-slate-500">
-                รวมบิลขายหน้าร้านและงานซ่อมที่เลขประจำตัวผู้เสียภาษีตรงกัน เพื่อออกใบวางบิลรวมฉบับเดียว
+                รวมบิลขายหน้าร้านและงานซ่อมที่เลขผู้เสียภาษีตรงกัน เพื่อออกใบเสนอราคา ใบแจ้งหนี้ หรือใบเสร็จรวม
               </p>
             </div>
           </div>
@@ -360,7 +570,7 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
               className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-md shadow-purple-500/20 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
             >
               <Printer className="w-4 h-4" />
-              <span>พิมพ์ใบวางบิลรวม (A4)</span>
+              <span>พิมพ์{docType === 'quotation' ? 'ใบเสนอราคา' : docType === 'receipt' ? 'ใบเสร็จรับเงิน' : 'ใบวางบิล'} (A4)</span>
             </button>
 
             <button
@@ -370,6 +580,73 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
               <X className="w-5 h-5" />
             </button>
           </div>
+        </div>
+
+        {/* Global Status Filter Tabs (Hidden in Print) */}
+        <div className="px-4 py-2.5 bg-white dark:bg-slate-850 border-b border-slate-200 dark:border-slate-800 flex items-center gap-1.5 overflow-x-auto text-xs print:hidden">
+          <span className="text-slate-400 font-semibold text-[11px] uppercase mr-1 flex items-center gap-1">
+            <Filter className="w-3.5 h-3.5 text-purple-500" />
+            <span>สถานะเครดิต:</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => setStatusFilter('all')}
+            className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer whitespace-nowrap ${
+              statusFilter === 'all'
+                ? 'bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900 shadow-xs'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
+            }`}
+          >
+            ทั้งหมด ({globalCounts.all})
+          </button>
+          <button
+            type="button"
+            onClick={() => setStatusFilter('pending_billing')}
+            className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+              statusFilter === 'pending_billing'
+                ? 'bg-amber-600 text-white shadow-xs'
+                : 'bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 hover:bg-amber-100'
+            }`}
+          >
+            <Clock className="w-3.5 h-3.5" />
+            <span>ค้างชำระ / รอวางบิล ({globalCounts.pending})</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setStatusFilter('billed')}
+            className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+              statusFilter === 'billed'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'bg-blue-50 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800 hover:bg-blue-100'
+            }`}
+          >
+            <FileText className="w-3.5 h-3.5" />
+            <span>รอเบิกเงินฎีกา / วางบิลแล้ว ({globalCounts.billed})</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setStatusFilter('paid')}
+            className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+              statusFilter === 'paid'
+                ? 'bg-emerald-600 text-white shadow-xs'
+                : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100'
+            }`}
+          >
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            <span>ชำระแล้ว / เงินโอนเข้า ({globalCounts.paid})</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setStatusFilter('overdue')}
+            className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+              statusFilter === 'overdue'
+                ? 'bg-rose-600 text-white shadow-xs'
+                : 'bg-rose-50 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800 hover:bg-rose-100'
+            }`}
+          >
+            <AlertTriangle className="w-3.5 h-3.5" />
+            <span>🚨 เกินกำหนดชำระ ({globalCounts.overdue})</span>
+          </button>
         </div>
 
         {/* Modal Main Workspace */}
@@ -383,7 +660,7 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
                 <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
-                  placeholder="ค้นหาชื่อหน่วยงาน หรือเลขผู้เสียภาษี..."
+                  placeholder="ค้นหาชื่อหน่วยงาน, เลขผู้เสียภาษี, เลขที่ฎีกา..."
                   value={searchTerm}
                   onChange={e => setSearchTerm(e.target.value)}
                   className="w-full pl-9 pr-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-800 dark:text-white"
@@ -396,9 +673,9 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
               {filteredGroups.length === 0 ? (
                 <div className="py-12 text-center text-slate-400 text-xs px-4 space-y-1">
                   <Building2 className="w-8 h-8 mx-auto text-slate-300 dark:text-slate-600 mb-2" />
-                  <p className="font-semibold">ไม่พบข้อมูลเครดิตราชการ</p>
+                  <p className="font-semibold">ไม่พบบิลในเงื่อนไขนี้</p>
                   <p className="text-[11px] text-slate-400">
-                    เมื่อทำรายการขาย POS หรือเปิดใบรับซ่อม ให้เลือกวิธีชำระเป็น "เครดิตราชการ" และกรอกเลขผู้เสียภาษี
+                    ลองเปลี่ยนแถบสถานะเครดิต หรือค้นหาด้วยชื่ออื่น
                   </p>
                 </div>
               ) : (
@@ -436,7 +713,12 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
                       </div>
 
                       <div className="flex items-center justify-between pt-2 mt-2 border-t border-slate-100 dark:border-slate-700 text-xs">
-                        <div className="flex items-center gap-1 text-[10px]">
+                        <div className="flex items-center gap-1 text-[10px] flex-wrap">
+                          {group.overdueCount > 0 && (
+                            <span className="px-1.5 py-0.5 rounded bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 font-bold animate-pulse">
+                              เกินกำหนด {group.overdueCount}
+                            </span>
+                          )}
                           {group.pendingCount > 0 && (
                             <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 font-semibold">
                               รอ {group.pendingCount}
@@ -444,12 +726,12 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
                           )}
                           {group.billedCount > 0 && (
                             <span className="px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300 font-semibold">
-                              วางแล้ว {group.billedCount}
+                              ฎีกา {group.billedCount}
                             </span>
                           )}
                           {group.paidCount > 0 && (
                             <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 font-semibold">
-                              ชำระแล้ว {group.paidCount}
+                              ชำระ {group.paidCount}
                             </span>
                           )}
                         </div>
@@ -465,13 +747,55 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
             </div>
           </div>
 
-          {/* ================= RIGHT WORKSPACE: CONSOLIDATED STATEMENT PREVIEW & BATCH CONTROLS ================= */}
+          {/* ================= RIGHT WORKSPACE: CONSOLIDATED STATEMENT PREVIEW & CONTROLS ================= */}
           <div className="flex-1 flex flex-col bg-slate-100 dark:bg-slate-950/60 overflow-hidden">
             {selectedGroup ? (
               <>
-                {/* Control Bar: Select Bills to include & Batch Status Actions (Hidden in Print) */}
+                {/* Control Bar: Document Type, Selection & Action Buttons (Hidden in Print) */}
                 <div className="p-3 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 flex flex-wrap items-center justify-between gap-2.5 print:hidden">
+                  
+                  {/* Left: Document Type Selector */}
                   <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-slate-500 hidden sm:inline">ประเภทเอกสาร:</span>
+                    <div className="flex items-center bg-slate-100 dark:bg-slate-700/60 p-1 rounded-xl text-xs font-bold">
+                      <button
+                        type="button"
+                        onClick={() => setDocType('invoice')}
+                        className={`px-3 py-1 rounded-lg transition-colors cursor-pointer ${
+                          docType === 'invoice'
+                            ? 'bg-purple-600 text-white shadow-xs'
+                            : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
+                        }`}
+                      >
+                        ใบแจ้งหนี้ / ใบวางบิล
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDocType('quotation')}
+                        className={`px-3 py-1 rounded-lg transition-colors cursor-pointer ${
+                          docType === 'quotation'
+                            ? 'bg-blue-600 text-white shadow-xs'
+                            : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
+                        }`}
+                      >
+                        ใบเสนอราคา (ขออนุมัติงบ)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDocType('receipt')}
+                        className={`px-3 py-1 rounded-lg transition-colors cursor-pointer ${
+                          docType === 'receipt'
+                            ? 'bg-emerald-600 text-white shadow-xs'
+                            : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
+                        }`}
+                      >
+                        ใบเสร็จรับเงินรวม
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Right: Actions */}
+                  <div className="flex items-center gap-2 flex-wrap">
                     <button
                       type="button"
                       onClick={selectAllBillsInGroup}
@@ -479,28 +803,35 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
                     >
                       เลือกทุกบิล ({selectedGroup.bills.length})
                     </button>
-                    <span className="text-xs text-slate-500">
-                      เลือกแล้ว {activeStatementBills.length} จาก {selectedGroup.bills.length} บิล
-                    </span>
-                  </div>
 
-                  {/* Batch Status Buttons */}
-                  <div className="flex items-center gap-1.5">
+                    {/* Record Disbursement Voucher Button */}
+                    <button
+                      type="button"
+                      onClick={() => handleOpenDisbursementModal()}
+                      className="px-3 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-1 shadow-sm transition-colors cursor-pointer"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                      <span>บันทึกเลขที่ฎีกา / รับเงิน</span>
+                    </button>
+
+                    {/* Quick status change buttons */}
                     <button
                       type="button"
                       onClick={() => handleBatchUpdateStatus('billed')}
                       disabled={isUpdatingStatus || activeStatementBills.length === 0}
                       className="px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 text-xs font-bold hover:bg-blue-100 transition-colors cursor-pointer disabled:opacity-50"
+                      title="ปรับสถานะเป็น รอเบิกเงินฎีกา / วางบิลแล้ว"
                     >
-                      ✓ มาร์คว่า "วางบิลแล้ว"
+                      ✓ วางบิลแล้ว
                     </button>
                     <button
                       type="button"
                       onClick={() => handleBatchUpdateStatus('paid')}
                       disabled={isUpdatingStatus || activeStatementBills.length === 0}
                       className="px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 text-xs font-bold hover:bg-emerald-100 transition-colors cursor-pointer disabled:opacity-50"
+                      title="ปรับสถานะเป็น ชำระเงิน / เงินโอนเข้าแล้ว"
                     >
-                      ✓ มาร์คว่า "ชำระเงินแล้ว"
+                      ✓ ชำระแล้ว
                     </button>
                   </div>
                 </div>
@@ -509,148 +840,180 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
                 <div className="flex-1 overflow-y-auto p-3 sm:p-6 flex justify-center print:p-0 print:overflow-visible">
                   <div
                     ref={printAreaRef}
-                    id="gov-consolidated-statement-print"
-                    className="bg-white text-slate-900 w-full max-w-[760px] p-6 sm:p-8 rounded-2xl shadow-xl border border-slate-200 print:shadow-none print:border-none print:p-0 print:max-w-none text-xs font-sans leading-tight space-y-4"
+                    id="gov-consolidated-statement"
+                    className="bg-white text-slate-900 w-full max-w-[140mm] p-2.5 sm:p-3 mx-auto shadow-none print:shadow-none border border-slate-200 print:border-none text-[8.5px] font-sans leading-tight space-y-1.5 a5-printable-page"
                   >
                     {/* Header: Shop Information */}
-                    <div className="flex justify-between items-start border-b-2 border-slate-800 pb-3">
-                      <div className="flex items-start gap-3 max-w-[460px]">
+                    <div className="flex justify-between items-start border-b-2 border-slate-800 pb-1.5">
+                      <div className="flex items-start gap-2 max-w-[340px]">
                         {shopSettings.logoUrl ? (
                           <img
                             src={shopSettings.logoUrl}
                             alt={shopSettings.shopName}
-                            className="w-14 h-14 object-contain rounded border border-slate-200 p-0.5 shrink-0"
+                            className="h-9 w-auto object-contain rounded border border-slate-200 p-0.5 shrink-0"
                           />
                         ) : (
-                          <div className="w-12 h-12 rounded-xl bg-purple-700 text-white flex items-center justify-center font-bold text-xl shrink-0">
-                            GOV
+                          <div className={`w-9 h-9 rounded text-white flex items-center justify-center font-bold text-xs shrink-0 ${
+                            docType === 'quotation' ? 'bg-blue-700' : docType === 'receipt' ? 'bg-emerald-700' : 'bg-purple-700'
+                          }`}>
+                            {docType === 'quotation' ? 'QT' : docType === 'receipt' ? 'REC' : 'GOV'}
                           </div>
                         )}
                         <div>
-                          <div className="flex items-center gap-2">
-                            <h1 className="text-base font-extrabold text-slate-900 tracking-tight leading-none">
+                          <div className="flex items-center gap-1">
+                            <h1 className="text-sm font-black text-slate-900 tracking-tight leading-none">
                               {shopSettings.shopName}
                             </h1>
                             {shopSettings.branch && (
-                              <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-100 font-bold text-slate-700">
+                              <span className="text-[8px] px-1 py-0.2 rounded bg-slate-100 font-bold text-slate-700">
                                 {shopSettings.branch}
                               </span>
                             )}
                           </div>
-                          <p className="text-[11px] text-slate-600 mt-1 leading-snug">
+                          <p className="text-[8px] text-slate-600 mt-0.5 leading-snug">
                             {shopSettings.shopAddress}
                           </p>
-                          <p className="text-[11px] text-slate-700 font-medium mt-0.5">
+                          <p className="text-[8px] text-slate-700 font-medium mt-0.2">
                             โทร: <span className="font-bold">{shopSettings.shopPhone}</span> | LINE: <span className="font-bold">{shopSettings.shopLineId}</span>
                             {shopSettings.taxId && (
-                              <span> | เลขประจำตัวผู้เสียภาษี: <span className="font-mono font-bold">{shopSettings.taxId}</span></span>
+                              <span> | เลขผู้เสียภาษี: <span className="font-mono font-bold">{shopSettings.taxId}</span></span>
                             )}
                           </p>
                         </div>
                       </div>
 
                       <div className="text-right shrink-0">
-                        <span className="inline-block px-3 py-1 rounded bg-purple-900 text-white font-extrabold text-xs uppercase tracking-wider">
-                          ใบแจ้งหนี้ / ใบวางบิลรวม (หน่วยงานราชการ)
+                        <span className={`inline-block px-2 py-0.5 rounded font-extrabold text-[9px] uppercase tracking-wider ${activeDocTitle.badge}`}>
+                          {activeDocTitle.th}
                         </span>
-                        <p className="font-mono font-bold text-sm text-purple-900 mt-1.5">
-                          {statementDocNo}
+                        <p className="font-mono font-bold text-xs text-purple-900 mt-0.5">
+                          {activeStatementDocNo}
                         </p>
-                        <p className="text-[11px] text-slate-500 mt-0.5">
-                          วันที่ออกเอกสาร: {todayThaiDate}
+                        <p className="text-[8px] text-slate-500">
+                          วันที่: {todayThaiDate}
                         </p>
+                        {docType === 'quotation' && (
+                          <span className="inline-block mt-0.5 px-1.5 py-0.2 rounded bg-blue-50 border border-blue-200 text-blue-800 text-[7.5px] font-bold">
+                            กำหนดยืนราคา 30 วัน
+                          </span>
+                        )}
                       </div>
                     </div>
 
                     {/* Government Customer Information Box */}
-                    <div className="bg-purple-50/70 p-3.5 rounded-xl border border-purple-200 space-y-1.5 text-xs text-purple-950">
-                      <div className="flex items-center justify-between border-b border-purple-200 pb-1">
-                        <span className="font-bold text-sm text-purple-950 flex items-center gap-1.5">
-                          <Building2 className="w-4 h-4 text-purple-700" />
+                    <div className="bg-purple-50/70 p-1.5 rounded border border-purple-200 space-y-0.5 text-[8px] text-purple-950">
+                      <div className="flex items-center justify-between border-b border-purple-200 pb-0.5">
+                        <span className="font-bold text-[8.5px] text-purple-950 flex items-center gap-1">
+                          <Building2 className="w-3 h-3 text-purple-700 inline" />
                           <span>เรียน ส่วนราชการ / หน่วยงานผู้ขอรับบริการ:</span>
                         </span>
-                        <span className="text-[11px] font-bold text-purple-900 bg-purple-200/60 px-2 py-0.5 rounded">
+                        <span className="text-[7.5px] font-bold text-purple-900 bg-purple-200/60 px-1.5 py-0.2 rounded">
                           รวม {activeStatementBills.length} รายการบิล
                         </span>
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 pt-0.5">
-                        <div className="flex justify-between sm:justify-start sm:gap-2">
-                          <span className="font-semibold text-slate-600">ชื่อหน่วยงาน:</span>
-                          <span className="font-extrabold text-purple-950">{selectedGroup.agencyName}</span>
+                      <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 pt-0.5">
+                        <div className="flex justify-between sm:justify-start sm:gap-1 truncate">
+                          <span className="font-semibold text-slate-600">หน่วยงาน:</span>
+                          <span className="font-bold text-purple-950 truncate">{selectedGroup.agencyName}</span>
                         </div>
-                        <div className="flex justify-between sm:justify-start sm:gap-2">
-                          <span className="font-semibold text-slate-600">เลขประจำตัวผู้เสียภาษี 13 หลัก:</span>
-                          <span className="font-mono font-extrabold text-purple-900 bg-white px-2 py-0.2 rounded border border-purple-200">
+                        <div className="flex justify-between sm:justify-start sm:gap-1">
+                          <span className="font-semibold text-slate-600">เลขผู้เสียภาษี 13 หลัก:</span>
+                          <span className="font-mono font-bold text-purple-900">
                             {selectedGroup.taxId || 'ไม่ได้ระบุ'}
                           </span>
                         </div>
-                        <div className="flex justify-between sm:justify-start sm:gap-2">
-                          <span className="font-semibold text-slate-600">ฝ่าย / งานพัสดุ:</span>
-                          <span>{selectedGroup.department || 'งานพัสดุ / บริหารทั่วไป'}</span>
+                        <div className="flex justify-between sm:justify-start sm:gap-1 truncate">
+                          <span className="font-semibold text-slate-600">ฝ่าย/งาน:</span>
+                          <span className="truncate">{selectedGroup.department || 'งานพัสดุ / บริหารทั่วไป'}</span>
                         </div>
-                        <div className="flex justify-between sm:justify-start sm:gap-2">
-                          <span className="font-semibold text-slate-600">ผู้สั่งจ้าง / ติดต่อ:</span>
-                          <span>{selectedGroup.contactPerson || '-'} {selectedGroup.contactPhone ? `(${selectedGroup.contactPhone})` : ''}</span>
+                        <div className="flex justify-between sm:justify-start sm:gap-1 truncate">
+                          <span className="font-semibold text-slate-600">ผู้ติดต่อ:</span>
+                          <span className="truncate">{selectedGroup.contactPerson || '-'} {selectedGroup.contactPhone ? `(${selectedGroup.contactPhone})` : ''}</span>
                         </div>
                       </div>
                     </div>
 
                     {/* Consolidated Bills Table */}
-                    <div className="border border-slate-300 rounded-xl overflow-hidden">
-                      <table className="w-full text-left text-xs">
+                    <div className="border border-slate-300 rounded overflow-hidden">
+                      <table className="w-full text-left text-[8px]">
                         <thead className="bg-slate-100 border-b border-slate-300 text-slate-800 font-bold">
                           <tr>
-                            <th className="py-2 px-2.5 text-center w-8 print:hidden">เลือก</th>
-                            <th className="py-2 px-2 text-center w-8">#</th>
-                            <th className="py-2 px-2.5 w-24">วันที่</th>
-                            <th className="py-2 px-2.5 w-32">เลขที่เอกสารอ้างอิง</th>
-                            <th className="py-2 px-2.5 w-28">เลขที่ใบสั่งซื้อ (PO)</th>
-                            <th className="py-2 px-3">รายการพัสดุ / บริการซ่อมบำรุง</th>
-                            <th className="py-2 px-3 text-right w-24">จำนวนเงิน</th>
+                            <th className="py-0.5 px-1.5 text-center w-6 print:hidden">เลือก</th>
+                            <th className="py-0.5 px-1 text-center w-6">#</th>
+                            <th className="py-0.5 px-1.5 w-16">วันที่</th>
+                            <th className="py-0.5 px-1.5 w-24">เลขที่เอกสาร</th>
+                            <th className="py-0.5 px-1.5 w-20">เลข PO / ฎีกา</th>
+                            <th className="py-0.5 px-2">รายการพัสดุ / บริการซ่อม</th>
+                            <th className="py-0.5 px-1.5 text-center w-16">กำหนดชำระ</th>
+                            <th className="py-0.5 px-2 text-right w-16">จำนวนเงิน</th>
+                            <th className="py-0.5 px-1 text-center w-8 print:hidden">จัดการ</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-200 text-[11px]">
+                        <tbody className="divide-y divide-slate-200 text-[8px]">
                           {selectedGroup.bills.map((bill, idx) => {
                             const isIncluded = selectedBillIds.has(bill.id);
+                            const dueStatus = getGovCreditDueStatus(bill.dueDate, bill.billingStatus);
                             return (
                               <tr
                                 key={bill.id}
                                 className={`transition-colors ${isIncluded ? 'bg-white' : 'bg-slate-50/70 text-slate-400 print:hidden'}`}
                               >
-                                <td className="py-2 px-2.5 text-center print:hidden">
+                                <td className="py-0.5 px-1.5 text-center print:hidden">
                                   <button
                                     type="button"
                                     onClick={() => toggleBillSelection(bill.id)}
                                     className="cursor-pointer text-purple-600"
                                   >
-                                    {isIncluded ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4 text-slate-400" />}
+                                    {isIncluded ? <CheckSquare className="w-3 h-3" /> : <Square className="w-3 h-3 text-slate-400" />}
                                   </button>
                                 </td>
-                                <td className="py-2 px-2 text-center font-bold text-slate-500">
+                                <td className="py-0.5 px-1 text-center font-bold text-slate-500">
                                   {idx + 1}
                                 </td>
-                                <td className="py-2 px-2.5 text-slate-700 whitespace-nowrap">
+                                <td className="py-0.5 px-1.5 text-slate-700 whitespace-nowrap">
                                   {bill.date}
                                 </td>
-                                <td className="py-2 px-2.5 font-mono font-bold text-purple-900 whitespace-nowrap">
-                                  <div className="flex items-center gap-1">
+                                <td className="py-0.5 px-1.5 font-mono font-bold text-purple-900 whitespace-nowrap">
+                                  <div className="flex items-center gap-0.5">
                                     {bill.source === 'pos' ? (
-                                      <Receipt className="w-3 h-3 text-emerald-600 inline" />
+                                      <Receipt className="w-2.5 h-2.5 text-emerald-600 inline" />
                                     ) : (
-                                      <Wrench className="w-3 h-3 text-blue-600 inline" />
+                                      <Wrench className="w-2.5 h-2.5 text-blue-600 inline" />
                                     )}
                                     <span>{bill.docNumber}</span>
                                   </div>
                                 </td>
-                                <td className="py-2 px-2.5 font-mono font-bold text-blue-800 whitespace-nowrap">
-                                  {bill.orderNumber}
+                                <td className="py-0.5 px-1.5 font-mono text-blue-800 whitespace-nowrap">
+                                  <div>
+                                    <span className="font-bold">{bill.orderNumber || '-'}</span>
+                                    {bill.disbursementNumber && (
+                                      <div className="text-[7.5px] text-indigo-700 font-semibold">
+                                        ฎีกา: {bill.disbursementNumber}
+                                      </div>
+                                    )}
+                                  </div>
                                 </td>
-                                <td className="py-2 px-3 text-slate-800 leading-snug">
-                                  {bill.itemsDescription}
+                                <td className="py-0.5 px-2 text-slate-800 leading-tight">
+                                  <div className="truncate max-w-[150px]">{bill.itemsDescription}</div>
                                 </td>
-                                <td className="py-2 px-3 text-right font-extrabold text-slate-900 whitespace-nowrap">
+                                <td className="py-0.5 px-1.5 text-center whitespace-nowrap">
+                                  <span className={`inline-block px-1 py-0.2 rounded text-[7px] font-semibold border ${dueStatus.badgeClass}`}>
+                                    {dueStatus.badgeLabel}
+                                  </span>
+                                </td>
+                                <td className="py-0.5 px-2 text-right font-extrabold text-slate-900 whitespace-nowrap">
                                   ฿{bill.totalAmount.toLocaleString()}
+                                </td>
+                                <td className="py-0.5 px-1 text-center print:hidden">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenDisbursementModal(bill)}
+                                    className="p-0.5 rounded hover:bg-slate-100 text-slate-500 hover:text-indigo-600 transition-colors"
+                                    title="แก้ไขฎีกา/กำหนดชำระ"
+                                  >
+                                    <Edit3 className="w-3 h-3" />
+                                  </button>
                                 </td>
                               </tr>
                             );
@@ -659,108 +1022,136 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
                       </table>
                     </div>
 
-                    {/* Summary Totals & BahtText Section */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    {/* Summary Totals & PromptPay Section (Side-by-side) */}
+                    <div className="grid grid-cols-2 gap-1.5 pt-0.5">
                       {/* Left: PromptPay QR for Combined Grand Total */}
-                      <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-3">
+                      <div className="p-1.5 rounded bg-slate-50 border border-slate-200 flex items-center justify-around gap-1.5">
                         {promptPayQrUrl ? (
                           <img
                             src={promptPayQrUrl}
                             alt="PromptPay QR Code"
-                            className="w-20 h-20 bg-white p-1 rounded-lg border border-slate-300 shrink-0"
+                            className="w-11 h-11 bg-white p-0.5 rounded border border-slate-300 shrink-0"
                           />
                         ) : (
-                          <div className="w-20 h-20 bg-slate-200 rounded-lg flex items-center justify-center text-xs">QR</div>
+                          <div className="w-11 h-11 bg-slate-200 rounded flex items-center justify-center text-[7px]">QR</div>
                         )}
-                        <div className="text-[10px] space-y-0.5 leading-tight">
-                          <span className="font-bold text-[#002D62] block text-[11px] flex items-center gap-1">
-                            <QrCode className="w-3.5 h-3.5 inline text-[#002D62]" />
-                            <span>สแกนชำระพร้อมเพย์ยอดรวม</span>
+                        <div className="text-[7.5px] space-y-0.2 leading-tight pl-1 border-l border-slate-200">
+                          <span className="font-bold text-[#002D62] block text-[8px] flex items-center gap-0.5">
+                            <QrCode className="w-2.5 h-2.5 inline text-[#002D62]" />
+                            <span>พร้อมเพย์ยอดรวม</span>
                           </span>
-                          <p className="text-slate-600">
-                            บัญชี: <span className="font-bold text-slate-800">{shopSettings.bankAccountName || shopSettings.shopName}</span>
-                          </p>
-                          <p className="text-slate-600 font-mono">
-                            พร้อมเพย์: <span className="font-bold text-slate-800">{shopSettings.promptPayId || '083-426-8058'}</span>
-                          </p>
-                          <p className="text-[11px] font-black text-purple-900 pt-0.5">
-                            ยอดรวม: ฿{statementGrandTotal.toLocaleString()} บาท
-                          </p>
+                          <p className="font-mono font-bold text-slate-800">{shopSettings.promptPayId || '083-426-8058'}</p>
+                          <p className="text-slate-500 truncate max-w-[90px]">{shopSettings.bankAccountName || shopSettings.shopName}</p>
+                          {shopSettings.bankAccountNumber && (
+                            <p className="text-slate-400 font-mono">{shopSettings.bankAccountNumber}</p>
+                          )}
                         </div>
                       </div>
 
                       {/* Right: Consolidated Calculations */}
-                      <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5 text-xs">
+                      <div className="p-1.5 rounded bg-slate-50 border border-slate-200 space-y-0.5 text-[8.5px]">
                         <div className="flex justify-between text-slate-600">
                           <span>รวมยอดเงินก่อนลด ({activeStatementBills.length} บิล):</span>
                           <span>฿{statementSubtotal.toLocaleString()}</span>
                         </div>
                         {statementDiscount > 0 && (
-                          <div className="flex justify-between text-rose-600 font-semibold">
-                            <span>รวมส่วนลดพิเศษ:</span>
+                          <div className="flex justify-between text-rose-600 font-bold text-[8px]">
+                            <span>ส่วนลดพิเศษ:</span>
                             <span>-฿{statementDiscount.toLocaleString()}</span>
                           </div>
                         )}
-                        <div className="flex justify-between items-baseline pt-1.5 border-t border-slate-300 font-extrabold text-slate-900">
-                          <span className="text-sm">ยอดสุทธิที่ต้องวางบิลทั้งสิ้น:</span>
-                          <span className="text-lg font-black text-purple-900">฿{statementGrandTotal.toLocaleString()}</span>
+                        <div className="flex justify-between items-baseline pt-0.5 border-t border-slate-300 font-black text-slate-900">
+                          <span className="text-[9px]">
+                            {docType === 'quotation' ? 'ยอดเสนอราคารวม:' : docType === 'receipt' ? 'ยอดเงินชำระสุทธิ:' : 'ยอดสุทธิวางบิลทั้งสิ้น:'}
+                          </span>
+                          <span className="text-xs font-black text-purple-900">฿{statementGrandTotal.toLocaleString()}</span>
                         </div>
-                        <div className="pt-1 border-t border-slate-200 text-center font-bold text-purple-950 text-xs">
-                          ( {statementBahtText} )
+                        <div className="pt-0.2 text-right font-bold text-purple-950 text-[8px] truncate">
+                          ({statementBahtText})
                         </div>
                       </div>
                     </div>
 
-                    {/* Official Government 3-Signoff Boxes */}
-                    <div className="pt-4 border-t-2 border-slate-800 space-y-3">
-                      <div className="font-bold text-slate-800 text-center uppercase tracking-wider text-xs">
-                        หลักฐานการวางบิลและตรวจรับพัสดุ (สำหรับหน่วยงานราชการ)
-                      </div>
+                    {/* Official Signoff Blocks (Strictly 1 single horizontal row) */}
+                    {docType === 'quotation' ? (
+                      /* Quotation Signoff Box: Supplier & Approving Authority (1 Row) */
+                      <div className="pt-1 border-t border-slate-300">
+                        <div className="grid grid-cols-2 gap-2 text-center text-[8px] text-slate-700">
+                          <div className="border border-slate-200 p-1.5 rounded space-y-1">
+                            <p className="font-bold text-blue-900">ผู้เสนอราคา / ผู้ส่งมอบงาน</p>
+                            <div className="border-b border-dotted border-slate-400 mx-2 pt-2"></div>
+                            <p>(........................................................)</p>
+                            <p className="text-[7.5px] text-slate-400">{shopSettings.shopName} | วันที่: {todayThaiDate}</p>
+                          </div>
 
-                      <div className="grid grid-cols-2 gap-4 pt-1">
-                        <div className="text-center p-2.5 rounded-xl border border-slate-300 space-y-5">
-                          <p className="font-bold text-slate-800">ผู้วางบิล / ผู้ส่งมอบงาน</p>
-                          <div className="border-b border-dotted border-slate-400 mx-6"></div>
-                          <p className="text-slate-500 text-[10px]">
-                            (............................................................)
-                            <br />
-                            วันที่ ...... / ...... / ..........
-                            <br />
-                            <span className="font-medium text-slate-700">{shopSettings.shopName}</span>
-                          </p>
-                        </div>
-
-                        <div className="text-center p-2.5 rounded-xl border border-slate-300 space-y-5">
-                          <p className="font-bold text-slate-800">ผู้รับวางบิล / เจ้าหน้าที่พัสดุ</p>
-                          <div className="border-b border-dotted border-slate-400 mx-6"></div>
-                          <p className="text-slate-500 text-[10px]">
-                            (............................................................)
-                            <br />
-                            วันที่ ...... / ...... / ..........
-                            <br />
-                            <span className="font-medium text-slate-700">{selectedGroup.agencyName}</span>
-                          </p>
+                          <div className="border border-blue-200 bg-blue-50/30 p-1.5 rounded space-y-0.5 text-left">
+                            <div className="flex items-center gap-1 font-bold text-blue-950 pb-0.5 border-b border-blue-200 text-[8px]">
+                              <CheckSquare className="w-3 h-3 text-blue-700 shrink-0" />
+                              <span>ส่วนผู้อนุมัติสั่งจ้าง / ขออนุมัติงบประมาณ</span>
+                            </div>
+                            <p className="text-[7.5px] text-slate-600">
+                              [ &nbsp; ] อนุมัติให้ดำเนินการจัดซื้อ/จ้างตามเสนอ
+                            </p>
+                            <div className="border-b border-dotted border-slate-400 mx-1 pt-1.5"></div>
+                            <p className="text-center text-[7.5px] pt-0.5">(........................................................)</p>
+                            <p className="text-[7px] text-slate-400 text-center">ผู้อำนวยการ / หัวหน้าหน่วยงาน | วันที่ ...... / ...... / ..........</p>
+                          </div>
                         </div>
                       </div>
+                    ) : docType === 'receipt' ? (
+                      /* Receipt Signoff Box: Payment Confirmation & Receiver (1 Row) */
+                      <div className="pt-1 border-t border-slate-300">
+                        <div className="grid grid-cols-2 gap-3 text-center text-[8px] text-slate-700">
+                          <div className="border border-slate-200 p-1.5 rounded space-y-1">
+                            <p className="font-bold text-slate-800">ผู้รับเงิน / แคชเชียร์</p>
+                            <div className="border-b border-dotted border-slate-400 mx-3 pt-2"></div>
+                            <p>(........................................................)</p>
+                            <p className="text-[7.5px] text-slate-400">{shopSettings.shopName} | วันที่: {todayThaiDate}</p>
+                          </div>
 
-                      <div className="text-center p-2.5 rounded-xl border border-slate-300 space-y-4 max-w-md mx-auto">
-                        <p className="font-bold text-slate-800">ผู้มีอำนาจอนุมัติเบิกจ่าย / ผู้บังคับบัญชา</p>
-                        <div className="border-b border-dotted border-slate-400 mx-10"></div>
-                        <p className="text-slate-500 text-[10px]">
-                          (............................................................)
-                          <br />
-                          วันที่ ...... / ...... / ..........
-                        </p>
+                          <div className="border border-slate-200 p-1.5 rounded space-y-1">
+                            <p className="font-bold text-slate-800">ผู้จ่ายเงิน / เจ้าหน้าที่การเงินหน่วยงาน</p>
+                            <div className="border-b border-dotted border-slate-400 mx-3 pt-2"></div>
+                            <p>(........................................................)</p>
+                            <p className="text-[7.5px] text-slate-400 truncate">{selectedGroup.agencyName}</p>
+                          </div>
+                        </div>
                       </div>
-                    </div>
+                    ) : (
+                      /* Standard Invoice / Billing Note: Strictly 1 Single Horizontal Row with 3 Boxes */
+                      <div className="pt-1 border-t border-slate-300">
+                        <div className="grid grid-cols-3 gap-1.5 text-center text-[8px] text-slate-700">
+                          <div className="border border-slate-200 p-1 rounded space-y-1">
+                            <p className="font-bold text-[8px]">ผู้วางบิล / ผู้ส่งมอบงาน</p>
+                            <div className="border-b border-dotted border-slate-400 mx-1.5 pt-2"></div>
+                            <p>(................................................)</p>
+                            <p className="text-[7px] text-slate-400 truncate">{shopSettings.shopName}</p>
+                          </div>
+
+                          <div className="border border-slate-200 p-1 rounded space-y-1">
+                            <p className="font-bold text-[8px]">ผู้รับวางบิล / เจ้าหน้าที่พัสดุ</p>
+                            <div className="border-b border-dotted border-slate-400 mx-1.5 pt-2"></div>
+                            <p>(................................................)</p>
+                            <p className="text-[7px] text-slate-400 truncate">{selectedGroup.agencyName}</p>
+                          </div>
+
+                          <div className="border border-slate-200 p-1 rounded space-y-1">
+                            <p className="font-bold text-[8px]">กรรมการตรวจรับพัสดุ</p>
+                            <div className="border-b border-dotted border-slate-400 mx-1.5 pt-2"></div>
+                            <p>(................................................)</p>
+                            <p className="text-[7px] text-slate-400">วันที่ ...... / ...... / ..........</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Document Footer */}
-                    <div className="pt-2 text-center text-[10px] text-slate-500 border-t border-dashed border-slate-300 mt-2">
+                    <div className="pt-1 text-center text-[7.5px] text-slate-500 border-t border-dashed border-slate-300">
                       <p className="font-semibold text-slate-700">
                         {shopSettings.receiptFooterMessage || 'ขอขอบพระคุณที่ให้ความไว้วางใจเลือกใช้บริการ'}
                       </p>
-                      <p className="text-[9px] text-slate-400">
-                        เอกสารนี้ออกโดยระบบบริหารจัดการร้าน พัทลุงปริ้นเตอร์ คอมพิวเตอร์ เพื่อใช้ประกอบการเบิกจ่ายตามระเบียบพัสดุราชการ
+                      <p className="text-[7px] text-slate-400">
+                        เอกสารนี้ออกโดยระบบเพื่อใช้ประกอบการเบิกจ่ายตามระเบียบพัสดุราชการ (A5 Portrait Format)
                       </p>
                     </div>
                   </div>
@@ -774,6 +1165,179 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
           </div>
         </div>
       </div>
+
+      {/* ================= MODAL: RECORD DISBURSEMENT VOUCHER & PAYMENT DETAILS ================= */}
+      {isDisbursementModalOpen && (
+        <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl max-w-lg w-full p-5 shadow-2xl border border-slate-200 dark:border-slate-700 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-indigo-100 dark:bg-indigo-950 text-indigo-600 flex items-center justify-center">
+                  <Edit3 className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-slate-800 dark:text-white">
+                    {targetBillForEdit ? `บันทึกข้อมูลฎีกา: ${targetBillForEdit.docNumber}` : `บันทึกข้อมูลฎีกาสำหรับ ${activeStatementBills.length} บิลที่เลือก`}
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    บันทึกเลขที่ฎีกาเบิกจ่าย วันที่เงินโอนเข้า และปรับปรุงสถานะการเงิน
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsDisbursementModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveDisbursement} className="space-y-3.5 text-xs">
+              {/* Disbursement Number */}
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-200 mb-1">
+                  เลขที่ฎีกาเบิกจ่าย (Disbursement Voucher No.)
+                </label>
+                <input
+                  type="text"
+                  placeholder="เช่น ฎีกาที่ 128/2569 หรือ ฎีกา กค 0405/2569"
+                  value={formDisbursementNumber}
+                  onChange={e => setFormDisbursementNumber(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white font-mono"
+                />
+              </div>
+
+              {/* Status & Disbursement Date */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-200 mb-1">
+                    สถานะการวางบิล
+                  </label>
+                  <select
+                    value={formBillingStatus}
+                    onChange={e => setFormBillingStatus(e.target.value as GovBillingStatus)}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white font-semibold"
+                  >
+                    <option value="pending_billing">1. ค้างชำระ / รอวางบิล</option>
+                    <option value="billed">2. วางบิลแล้ว / รอเบิกเงินฎีกา</option>
+                    <option value="paid">3. ชำระแล้ว / เงินโอนเข้าเรียบร้อย</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-200 mb-1">
+                    วันที่ทำเรื่องฎีกา
+                  </label>
+                  <input
+                    type="date"
+                    value={formDisbursementDate}
+                    onChange={e => setFormDisbursementDate(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white"
+                  />
+                </div>
+              </div>
+
+              {/* Paid Date & Transfer Ref (Show if paid or being marked as paid) */}
+              <div className="grid grid-cols-2 gap-3 p-2.5 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/60">
+                <div>
+                  <label className="block font-semibold text-emerald-900 dark:text-emerald-300 mb-1">
+                    วันที่เงินโอนเข้า / รับเงิน
+                  </label>
+                  <input
+                    type="date"
+                    value={formPaidDate}
+                    onChange={e => setFormPaidDate(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-emerald-300 dark:border-emerald-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-emerald-900 dark:text-emerald-300 mb-1">
+                    เลขที่อ้างอิงโอนเงิน / เลขที่เช็ค
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="เช่น KTB-998822 หรือ เช็ค ธ.กรุงไทย"
+                    value={formTransferRef}
+                    onChange={e => setFormTransferRef(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-emerald-300 dark:border-emerald-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-white font-mono"
+                  />
+                </div>
+              </div>
+
+              {/* Credit Terms & Due Date */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-200 mb-1">
+                    เครดิตเทอม
+                  </label>
+                  <select
+                    value={formCreditDays}
+                    onChange={e => {
+                      const days = Number(e.target.value);
+                      setFormCreditDays(days);
+                      if (days > 0) {
+                        const d = new Date();
+                        d.setDate(d.getDate() + days);
+                        setFormDueDate(d.toISOString().split('T')[0]);
+                      }
+                    }}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white"
+                  >
+                    {CREDIT_DAYS_PRESETS.map(p => (
+                      <option key={p.days} value={p.days}>{p.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-200 mb-1">
+                    วันครบกำหนดชำระ (Due Date)
+                  </label>
+                  <input
+                    type="date"
+                    value={formDueDate}
+                    onChange={e => setFormDueDate(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white"
+                  />
+                </div>
+              </div>
+
+              {/* Notes */}
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-200 mb-1">
+                  หมายเหตุโครงการ / บันทึกเพิ่มเติม
+                </label>
+                <input
+                  type="text"
+                  placeholder="เช่น งบประมาณประจำปี 2569 โครงการปรับปรุงห้องปฏิบัติการคอมพิวเตอร์"
+                  value={formNotes}
+                  onChange={e => setFormNotes(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white"
+                />
+              </div>
+
+              {/* Submit Buttons */}
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-700">
+                <button
+                  type="button"
+                  onClick={() => setIsDisbursementModalOpen(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-xs hover:bg-slate-200 transition-colors"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="submit"
+                  disabled={isUpdatingStatus}
+                  className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-600/20 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>บันทึกข้อมูล</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

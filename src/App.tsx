@@ -20,6 +20,7 @@ import { GovConsolidatedBillingModal } from './components/GovConsolidatedBilling
 export default function App() {
   // Navigation State
   const [activeTab, setActiveTab] = useState<'dashboard' | 'tickets' | 'inventory' | 'pos' | 'reports'>('dashboard');
+  const [repairViewPage, setRepairViewPage] = useState<'active' | 'closed'>('active');
   
   // Dedicated Customer Portal State (True separation between Customer & Admin)
   const [customerTicketNumber, setCustomerTicketNumber] = useState<string | null>(null);
@@ -264,7 +265,14 @@ export default function App() {
             onSelectTicket={handleOpenEditTicket}
             onPrintTicket={handlePrintTicket}
             onLineNotify={handleLineNotify}
-            onViewAllTickets={() => setActiveTab('tickets')}
+            onViewAllTickets={() => {
+              setRepairViewPage('active');
+              setActiveTab('tickets');
+            }}
+            onViewClosedTickets={() => {
+              setRepairViewPage('closed');
+              setActiveTab('tickets');
+            }}
             onViewInventory={() => setActiveTab('inventory')}
             onOpenGovBilling={() => setIsGovBillingOpen(true)}
           />
@@ -273,6 +281,7 @@ export default function App() {
         {activeTab === 'tickets' && (
           <RepairTickets
             tickets={tickets}
+            initialViewPage={repairViewPage}
             onNewTicket={handleOpenNewTicket}
             onEditTicket={handleOpenEditTicket}
             onDeleteTicket={handleDeleteTicket}
