@@ -173,7 +173,7 @@ export const POSReceiptModal: React.FC<POSReceiptModalProps> = ({
                     : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
                 }`}
               >
-                ขนาด A5 (เต็มแผ่น)
+                📄 A5 แนวตั้ง (148 × 210 มม.)
               </button>
             </div>
 
@@ -202,15 +202,22 @@ export const POSReceiptModal: React.FC<POSReceiptModalProps> = ({
         </div>
 
         {/* Scrollable Receipt Preview Area */}
-        <div className="flex-1 overflow-y-auto p-3 sm:p-6 bg-slate-100 dark:bg-slate-950/60 flex justify-center print:p-0 print:bg-white print:overflow-visible">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-6 bg-slate-200/70 dark:bg-slate-950 flex flex-col items-center print:p-0 print:bg-white print:overflow-visible">
           {paperSize === 'a5' ? (
             /* ================= A5 FORMAT (148mm x 210mm) ================= */
-            <div
-              ref={printContentRef}
-              id="pos-receipt-print-area"
-              className="bg-white text-slate-900 w-full max-w-[140mm] p-2.5 sm:p-3 mx-auto shadow-none print:shadow-none border border-slate-200 print:border-none text-[8.5px] leading-tight space-y-1.5 font-sans a5-printable-page"
-            >
-              {/* Header: Shop Information */}
+            <div className="flex flex-col items-center w-full">
+              {/* Paper Dimension Visual Indicator for Screen */}
+              <div className="mb-2 px-3 py-1 rounded-full bg-blue-100 dark:bg-blue-950/70 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-xs font-bold flex items-center gap-1.5 shadow-xs print:hidden">
+                <span>📄 สัดส่วนกระดาษ A5 แนวตั้ง (148 มม. × 210 มม.)</span>
+              </div>
+
+              <div
+                ref={printContentRef}
+                id="pos-receipt-print-area"
+                className="a5-portrait-paper bg-white text-slate-900 w-[148mm] min-h-[210mm] max-w-full p-4 mx-auto shadow-2xl rounded-sm border border-slate-300 text-[8.5px] leading-tight flex flex-col justify-between font-sans print:shadow-none print:border-none print:w-[140mm] print:h-[202mm] print:min-h-[202mm] print:p-0 print:m-0"
+              >
+                {/* TOP HALF */}
+                <div className="space-y-1.5">
               <div className="flex justify-between items-start border-b-2 border-slate-800 pb-1.5">
                 <div className="flex items-start gap-2 max-w-[340px]">
                   {shopSettings.logoUrl ? (
@@ -352,9 +359,12 @@ export const POSReceiptModal: React.FC<POSReceiptModalProps> = ({
                   </tbody>
                 </table>
               </div>
+            </div>
 
-              {/* Pricing Totals & QR Code / Payment Area (Side-by-side) */}
-              <div className="grid grid-cols-2 gap-1.5 pt-0.5">
+            {/* BOTTOM HALF */}
+            <div className="space-y-1.5 pt-1.5 border-t border-slate-200">
+                  {/* Pricing Totals & QR Code / Payment Area (Side-by-side) */}
+                  <div className="grid grid-cols-2 gap-1.5 pt-0.5">
                 {/* Left: PromptPay QR / Payment Info */}
                 <div className="p-1.5 rounded bg-slate-50 border border-slate-200 flex items-center justify-around gap-1.5">
                   {showPromptPayQr && promptPayQrUrl ? (
@@ -464,7 +474,9 @@ export const POSReceiptModal: React.FC<POSReceiptModalProps> = ({
                 </p>
               </div>
             </div>
-          ) : (
+          </div>
+        </div>
+      ) : (
             /* ================= 80MM THERMAL SLIP FORMAT ================= */
             <div
               ref={printContentRef}

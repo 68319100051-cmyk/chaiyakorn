@@ -186,7 +186,7 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-800'
                   }`}
                 >
-                  ขนาด A5 (มาตรฐาน)
+                  📄 A5 แนวตั้ง (148 × 210 มม.)
                 </button>
                 <button
                   type="button"
@@ -308,363 +308,376 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
         </div>
 
         {/* Scrollable Printable Paper Preview Area */}
-        <div className="flex-1 overflow-y-auto p-3 sm:p-6 bg-slate-100 dark:bg-slate-950/60 flex justify-center print:p-0 print:bg-white print:overflow-visible">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-6 bg-slate-200/70 dark:bg-slate-950 flex flex-col items-center print:p-0 print:bg-white print:overflow-visible">
           
           {/* ================= A5 FORMAT (148mm x 210mm) ================= */}
           {printFormat === 'a5' ? (
-            <div
-              id="printable-receipt-a5"
-              className="bg-white text-slate-900 w-full max-w-[140mm] p-2.5 sm:p-3 mx-auto shadow-none print:shadow-none border border-slate-200 print:border-none text-[8.5px] leading-tight space-y-1.5 font-sans a5-printable-page"
-            >
-              {/* Header: Logo, Store Info & Title */}
-              <div className="flex justify-between items-start border-b-2 border-slate-800 pb-1.5">
-                <div className="flex items-start gap-2 max-w-[340px]">
-                  {shopSettings.logoUrl && (
-                    <img
-                      src={shopSettings.logoUrl}
-                      alt={shopSettings.shopName}
-                      className="h-9 w-auto object-contain rounded border border-slate-200 p-0.5 shrink-0"
-                    />
-                  )}
-                  <div>
-                    <div className="flex items-center gap-1">
-                      <h1 className="text-sm font-black text-slate-900 tracking-tight leading-none">
-                        {shopSettings.shopName}
-                      </h1>
-                      {shopSettings.branch && (
-                        <span className="text-[8px] px-1 py-0.2 rounded bg-slate-100 font-bold text-slate-700">
-                          {shopSettings.branch}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-[8px] text-slate-600 mt-0.5 leading-snug">
-                      {shopSettings.shopAddress}
-                    </p>
-                    <p className="text-[8px] text-slate-700 font-medium mt-0.2">
-                      โทร: <span className="font-bold">{shopSettings.shopPhone}</span> | LINE: <span className="font-bold">{shopSettings.shopLineId}</span>
-                      {shopSettings.taxId && <span> | เลขผู้เสียภาษี: <span className="font-mono">{shopSettings.taxId}</span></span>}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="text-right shrink-0">
-                  <span className={`inline-block px-2 py-0.5 rounded text-white font-black text-[9px] uppercase tracking-wider ${currentDoc.bg}`}>
-                    {currentDoc.th}
-                  </span>
-                  <p className="font-mono font-bold text-xs text-blue-700 mt-0.5">
-                    {activeDocNo}
-                  </p>
-                  <p className="text-[8px] text-slate-500">
-                    วันที่: {todayThai}
-                  </p>
-                  {docType === 'quotation' && (
-                    <p className="text-[7.5px] text-amber-800 font-semibold bg-amber-50 px-1 rounded mt-0.2">
-                      * กำหนดยืนราคา 30 วัน
-                    </p>
-                  )}
-                </div>
+            <div className="flex flex-col items-center w-full">
+              {/* Paper Dimension Visual Indicator for Screen */}
+              <div className="mb-2 px-3 py-1 rounded-full bg-blue-100 dark:bg-blue-950/70 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-xs font-bold flex items-center gap-1.5 shadow-xs print:hidden">
+                <span>📄 สัดส่วนกระดาษ A5 แนวตั้ง (148 มม. × 210 มม.)</span>
               </div>
 
-              {/* Quotation Special Notice */}
-              {docType === 'quotation' && (
-                <div className="p-1 rounded bg-blue-50/70 border border-blue-200 text-[8px] text-blue-900">
-                  <span className="font-bold">เรียน: </span>
-                  <span>หัวหน้าหน่วยงาน / เจ้าหน้าที่พัสดุ / ผู้มีอำนาจ ({ticket.govCreditInfo?.agencyName || ticket.customerName})</span>
-                  <span className="text-slate-600 ml-1">
-                    — ขอเสนอราคาค่าบริการและอะไหล่สำหรับงานซ่อมบำรุงตามรายการด้านล่าง เพื่อประกอบการขออนุมัติจัดจ้าง
-                  </span>
-                </div>
-              )}
-
-              {/* Customer & Device Information (Side by side 2 columns) */}
-              <div className="grid grid-cols-2 gap-1.5 text-[8.5px]">
-                {/* Customer Box */}
-                <div className="bg-slate-50 p-1.5 rounded border border-slate-200 space-y-0.5">
-                  <div className="font-bold text-[8px] text-blue-800 border-b border-slate-200 pb-0.5 flex items-center justify-between">
-                    <span>ข้อมูลลูกค้า / หน่วยงาน</span>
-                    {isGovCredit && (
-                      <span className="text-[7.5px] bg-purple-100 text-purple-800 px-1 py-0.2 rounded font-bold">
-                        เครดิตราชการ
-                      </span>
-                    )}
-                  </div>
-                  <p className="font-bold text-[9.5px] text-slate-900">{ticket.customerName}</p>
-                  <p className="text-slate-700">โทร: <span className="font-semibold">{ticket.customerPhone}</span> {ticket.customerLineId && <span className="text-slate-500">| LINE: {ticket.customerLineId}</span>}</p>
-                  {ticket.customerAddress && <p className="text-slate-500 truncate text-[8px]">ที่อยู่: {ticket.customerAddress}</p>}
-                  
-                  {isGovCredit && ticket.govCreditInfo && (
-                    <div className="pt-0.5 border-t border-slate-200 text-[8px] text-purple-950 space-y-0.2">
-                      <p className="truncate"><span className="font-bold">หน่วยงาน:</span> {ticket.govCreditInfo.agencyName}</p>
-                      <div className="flex justify-between gap-1">
-                        {ticket.govCreditInfo.taxId && <span>เลขผู้เสียภาษี: <span className="font-mono font-bold">{ticket.govCreditInfo.taxId}</span></span>}
-                        {ticket.govCreditInfo.department && <span className="truncate">{ticket.govCreditInfo.department}</span>}
-                      </div>
-                      <div className="flex justify-between gap-1 text-indigo-800 font-semibold">
-                        {ticket.govCreditInfo.orderNumber && <span>PO: {ticket.govCreditInfo.orderNumber}</span>}
-                        {ticket.govCreditInfo.disbursementNumber && (
-                          <span className="font-bold">เลขที่ฎีกา: {ticket.govCreditInfo.disbursementNumber}</span>
-                        )}
+              <div
+                id="printable-receipt-a5"
+                className="a5-portrait-paper bg-white text-slate-900 w-[148mm] min-h-[210mm] max-w-full p-4 mx-auto shadow-2xl rounded-sm border border-slate-300 text-[8.5px] leading-tight flex flex-col justify-between font-sans print:shadow-none print:border-none print:w-[140mm] print:h-[202mm] print:min-h-[202mm] print:p-0 print:m-0"
+              >
+                {/* TOP HALF: Header, Customer/Device info, Problem & Items Table */}
+                <div className="space-y-1.5">
+                  {/* Header: Logo, Store Info & Title */}
+                  <div className="flex justify-between items-start border-b-2 border-slate-800 pb-1.5">
+                    <div className="flex items-start gap-2 max-w-[340px]">
+                      {shopSettings.logoUrl && (
+                        <img
+                          src={shopSettings.logoUrl}
+                          alt={shopSettings.shopName}
+                          className="h-9 w-auto object-contain rounded border border-slate-200 p-0.5 shrink-0"
+                        />
+                      )}
+                      <div>
+                        <div className="flex items-center gap-1">
+                          <h1 className="text-sm font-black text-slate-900 tracking-tight leading-none">
+                            {shopSettings.shopName}
+                          </h1>
+                          {shopSettings.branch && (
+                            <span className="text-[8px] px-1 py-0.2 rounded bg-slate-100 font-bold text-slate-700">
+                              {shopSettings.branch}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[8px] text-slate-600 mt-0.5 leading-snug">
+                          {shopSettings.shopAddress}
+                        </p>
+                        <p className="text-[8px] text-slate-700 font-medium mt-0.2">
+                          โทร: <span className="font-bold">{shopSettings.shopPhone}</span> | LINE: <span className="font-bold">{shopSettings.shopLineId}</span>
+                          {shopSettings.taxId && <span> | เลขผู้เสียภาษี: <span className="font-mono">{shopSettings.taxId}</span></span>}
+                        </p>
                       </div>
                     </div>
-                  )}
-                </div>
 
-                {/* Device Box */}
-                <div className="bg-slate-50 p-1.5 rounded border border-slate-200 space-y-0.5">
-                  <div className="font-bold text-[8px] text-blue-800 border-b border-slate-200 pb-0.5">
-                    ข้อมูลอุปกรณ์ (Device)
+                    <div className="text-right shrink-0">
+                      <span className={`inline-block px-2 py-0.5 rounded text-white font-black text-[9px] uppercase tracking-wider ${currentDoc.bg}`}>
+                        {currentDoc.th}
+                      </span>
+                      <p className="font-mono font-bold text-xs text-blue-700 mt-0.5">
+                        {activeDocNo}
+                      </p>
+                      <p className="text-[8px] text-slate-500">
+                        วันที่: {todayThai}
+                      </p>
+                      {docType === 'quotation' && (
+                        <p className="text-[7.5px] text-amber-800 font-semibold bg-amber-50 px-1 rounded mt-0.2">
+                          * กำหนดยืนราคา 30 วัน
+                        </p>
+                      )}
+                    </div>
                   </div>
-                  <p className="font-bold text-[9.5px] text-slate-900">{ticket.brand} {ticket.model}</p>
-                  <p className="text-slate-700">
-                    ประเภท: <span className="font-semibold">{DEVICE_LABELS[ticket.deviceType]?.label || ticket.deviceType}</span>
-                    {ticket.serialNumber && <span> | S/N: <span className="font-mono">{ticket.serialNumber}</span></span>}
-                  </p>
-                  <p className="text-slate-600 truncate text-[8px]">
-                    อุปกรณ์ติดมา: <span className="font-medium">{ticket.accessories?.join(', ') || 'ไม่มี'}</span>
-                  </p>
-                  {docType === 'invoice' && ticket.govCreditInfo && (
-                    <div className="pt-0.5 border-t border-slate-200 text-[8px] space-y-0.2">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-slate-700">เครดิต: {ticket.govCreditInfo.creditDays} วัน</span>
-                        <span className="font-mono font-bold text-blue-800">ครบกำหนด: {ticket.govCreditInfo.dueDate || '-'}</span>
-                      </div>
-                      {dueStatus && (
-                        <div className="text-right">
-                          <span className={`text-[7.5px] px-1 py-0.2 rounded border ${dueStatus.badgeClass}`}>
-                            {dueStatus.badgeLabel}
+
+                  {/* Quotation Special Notice */}
+                  {docType === 'quotation' && (
+                    <div className="p-1 rounded bg-blue-50/70 border border-blue-200 text-[8px] text-blue-900">
+                      <span className="font-bold">เรียน: </span>
+                      <span>หัวหน้าหน่วยงาน / เจ้าหน้าที่พัสดุ / ผู้มีอำนาจ ({ticket.govCreditInfo?.agencyName || ticket.customerName})</span>
+                      <span className="text-slate-600 ml-1">
+                        — ขอเสนอราคาค่าบริการและอะไหล่สำหรับงานซ่อมบำรุงตามรายการด้านล่าง เพื่อประกอบการขออนุมัติจัดจ้าง
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Customer & Device Information (Side by side 2 columns) */}
+                  <div className="grid grid-cols-2 gap-1.5 text-[8.5px]">
+                    {/* Customer Box */}
+                    <div className="bg-slate-50 p-1.5 rounded border border-slate-200 space-y-0.5">
+                      <div className="font-bold text-[8px] text-blue-800 border-b border-slate-200 pb-0.5 flex items-center justify-between">
+                        <span>ข้อมูลลูกค้า / หน่วยงาน</span>
+                        {isGovCredit && (
+                          <span className="text-[7.5px] bg-purple-100 text-purple-800 px-1 py-0.2 rounded font-bold">
+                            เครดิตราชการ
                           </span>
+                        )}
+                      </div>
+                      <p className="font-bold text-[9.5px] text-slate-900">{ticket.customerName}</p>
+                      <p className="text-slate-700">โทร: <span className="font-semibold">{ticket.customerPhone}</span> {ticket.customerLineId && <span className="text-slate-500">| LINE: {ticket.customerLineId}</span>}</p>
+                      {ticket.customerAddress && <p className="text-slate-500 truncate text-[8px]">ที่อยู่: {ticket.customerAddress}</p>}
+                      
+                      {isGovCredit && ticket.govCreditInfo && (
+                        <div className="pt-0.5 border-t border-slate-200 text-[8px] text-purple-950 space-y-0.2">
+                          <p className="truncate"><span className="font-bold">หน่วยงาน:</span> {ticket.govCreditInfo.agencyName}</p>
+                          <div className="flex justify-between gap-1">
+                            {ticket.govCreditInfo.taxId && <span>เลขผู้เสียภาษี: <span className="font-mono font-bold">{ticket.govCreditInfo.taxId}</span></span>}
+                            {ticket.govCreditInfo.department && <span className="truncate">{ticket.govCreditInfo.department}</span>}
+                          </div>
+                          <div className="flex justify-between gap-1 text-indigo-800 font-semibold">
+                            {ticket.govCreditInfo.orderNumber && <span>PO: {ticket.govCreditInfo.orderNumber}</span>}
+                            {ticket.govCreditInfo.disbursementNumber && (
+                              <span className="font-bold">เลขที่ฎีกา: {ticket.govCreditInfo.disbursementNumber}</span>
+                            )}
+                          </div>
                         </div>
                       )}
                     </div>
-                  )}
-                </div>
-              </div>
 
-              {/* Problem & Diagnosis */}
-              <div className="p-1.5 rounded bg-slate-50 border border-slate-200 text-[8.5px] space-y-0.5">
-                <div className="flex justify-between items-start gap-1">
-                  <div className="flex-1 truncate">
-                    <span className="font-bold text-slate-800">อาการเสีย/งาน: </span>
-                    <span className="text-slate-700 font-medium">{ticket.problemDescription}</span>
-                  </div>
-                  {ticket.initialConditionNotes && (
-                    <div className="text-slate-500 shrink-0 text-[8px]">
-                      <span>สภาพ: {ticket.initialConditionNotes}</span>
-                    </div>
-                  )}
-                </div>
-
-                {ticket.technicianNotes && (
-                  <div className="pt-0.5 border-t border-slate-200/80 text-blue-900 truncate">
-                    <span className="font-bold">ผลการตรวจเช็ค: </span>
-                    <span>{ticket.technicianNotes}</span>
-                    <span className="text-slate-500 ml-1">({ticket.technicianName || 'ช่างประจำร้าน'})</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Items & Parts Table */}
-              <div className="border border-slate-200 rounded overflow-hidden text-[8.5px]">
-                <table className="w-full text-left">
-                  <thead className="bg-slate-100 text-slate-800 font-bold border-b border-slate-200">
-                    <tr>
-                      <th className="py-0.5 px-1.5 w-6 text-center">#</th>
-                      <th className="py-0.5 px-1.5">รายการค่าบริการและอะไหล่</th>
-                      <th className="py-0.5 px-1.5 text-center w-10">จำนวน</th>
-                      <th className="py-0.5 px-1.5 text-right w-14">หน่วยละ</th>
-                      <th className="py-0.5 px-1.5 text-right w-16">รวม (บาท)</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    <tr>
-                      <td className="py-0.5 px-1.5 text-center text-slate-400">1</td>
-                      <td className="py-0.5 px-1.5 font-medium">ค่าบริการตรวจเช็คและค่าแรงซ่อมบำรุง</td>
-                      <td className="py-0.5 px-1.5 text-center">1</td>
-                      <td className="py-0.5 px-1.5 text-right">฿{(ticket.laborCost || 0).toLocaleString()}</td>
-                      <td className="py-0.5 px-1.5 text-right font-semibold">฿{(ticket.laborCost || 0).toLocaleString()}</td>
-                    </tr>
-                    {ticket.partsUsed?.map((part, i) => (
-                      <tr key={i}>
-                        <td className="py-0.5 px-1.5 text-center text-slate-400">{i + 2}</td>
-                        <td className="py-0.5 px-1.5 font-medium truncate max-w-[200px]">
-                          {part.itemName} {part.itemCode && <span className="font-mono text-slate-400 text-[8px]">({part.itemCode})</span>}
-                        </td>
-                        <td className="py-0.5 px-1.5 text-center">{part.quantity}</td>
-                        <td className="py-0.5 px-1.5 text-right">฿{part.unitPrice.toLocaleString()}</td>
-                        <td className="py-0.5 px-1.5 text-right font-semibold">฿{part.totalPrice.toLocaleString()}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Pricing Totals & QR Code / Payment Area (Side-by-side) */}
-              <div className="grid grid-cols-2 gap-1.5 pt-0.5">
-                {/* Left: QR Codes / Account Info */}
-                <div className="p-1.5 rounded bg-slate-50 border border-slate-200 flex items-center justify-around gap-1.5">
-                  <div className="flex flex-col items-center text-center">
-                    {qrCodeDataUrl ? (
-                      <img
-                        src={qrCodeDataUrl}
-                        alt="Tracking QR"
-                        className="w-11 h-11 bg-white p-0.5 rounded border border-slate-300"
-                      />
-                    ) : (
-                      <div className="w-11 h-11 bg-slate-200 rounded flex items-center justify-center text-[7px]">QR</div>
-                    )}
-                    <span className="text-[7.5px] font-bold text-blue-900 mt-0.5">
-                      เช็คสถานะสด
-                    </span>
-                  </div>
-
-                  <div className="flex flex-col items-center text-center">
-                    {promptPayQrUrl ? (
-                      <img
-                        src={promptPayQrUrl}
-                        alt="PromptPay QR"
-                        className="w-11 h-11 bg-white p-0.5 rounded border border-slate-300"
-                      />
-                    ) : (
-                      <div className="w-11 h-11 bg-slate-200 rounded flex items-center justify-center text-[7px]">QR</div>
-                    )}
-                    <span className="text-[7.5px] font-bold text-emerald-900 mt-0.5">
-                      พร้อมเพย์
-                    </span>
-                  </div>
-
-                  <div className="text-[7.5px] text-slate-600 leading-tight space-y-0.2 pl-1 border-l border-slate-200">
-                    <p className="font-mono font-bold text-slate-800">{shopSettings.promptPayId || '083-426-8058'}</p>
-                    <p className="text-slate-500 truncate max-w-[85px]">{shopSettings.bankAccountName || shopSettings.shopName}</p>
-                    {shopSettings.bankAccountNumber && (
-                      <p className="font-mono text-slate-400">{shopSettings.bankAccountNumber}</p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Right: Pricing Totals */}
-                <div className="p-1.5 rounded bg-slate-50 border border-slate-200 text-[8.5px] space-y-0.5">
-                  <div className="flex justify-between text-slate-600">
-                    <span>ค่าแรง/บริการ:</span>
-                    <span className="font-medium">฿{(ticket.laborCost || 0).toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between text-slate-600">
-                    <span>ค่าอะไหล่รวม:</span>
-                    <span className="font-medium">฿{(ticket.partsCost || 0).toLocaleString()}</span>
-                  </div>
-                  {(Number(ticket.discount) || 0) > 0 && (
-                    <div className="flex justify-between text-rose-600 font-bold text-[8px]">
-                      <span>ส่วนลดพิเศษ:</span>
-                      <span>-฿{(Number(ticket.discount) || 0).toLocaleString()}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between items-baseline text-[9.5px] font-black text-slate-900 pt-0.5 border-t border-slate-300">
-                    <span>ยอดสุทธิทั้งสิ้น:</span>
-                    <span className="text-blue-700 text-xs">฿{(ticket.totalAmount || 0).toLocaleString()}</span>
-                  </div>
-                  <div className="text-right text-[8px] text-slate-600 font-semibold truncate">
-                    ({totalInBahtText})
-                  </div>
-                  <div className="text-right text-[7.5px] text-slate-500 pt-0.2">
-                    {isGovCredit
-                      ? `เครดิตราชการ (${ticket.govCreditInfo?.billingStatus === 'paid' ? 'ชำระแล้ว' : ticket.govCreditInfo?.billingStatus === 'billed' ? 'รอเบิกเงินฎีกา' : 'รอวางบิล'})`
-                      : ticket.isPaid
-                      ? '✓ ชำระเงินเรียบร้อยแล้ว'
-                      : 'ชำระเมื่อรับเครื่อง'}
-                  </div>
-                </div>
-              </div>
-
-              {/* Official Warranty Details */}
-              <div className="text-[8px] bg-slate-50 px-1.5 py-1 rounded border border-slate-200 leading-tight flex items-center justify-between gap-1">
-                <div className="flex items-center gap-1 truncate">
-                  <span className="font-bold text-slate-900">🛡️ รับประกันงานซ่อม:</span>
-                  <span className="text-blue-800 font-bold">
-                    {(ticket.warrantyDays ?? 30) > 0 ? `${ticket.warrantyDays ?? 30} วัน` : 'ไม่มีประกัน'}
-                  </span>
-                  {ticket.warrantyExpiryDate && (ticket.warrantyDays ?? 30) > 0 && (
-                    <span className="text-slate-500 font-mono">
-                      (ถึง: {ticket.warrantyExpiryDate})
-                    </span>
-                  )}
-                  <span className="text-slate-500 text-[7.5px] ml-1">
-                    * รับประกันเฉพาะอาการเสียเดิมและอะไหล่ที่เปลี่ยนตามใบเสร็จ
-                  </span>
-                </div>
-                {ticket.isWarrantyClaim && (
-                  <span className="font-bold text-purple-800 bg-purple-100 px-1 py-0.2 rounded text-[7.5px] shrink-0">
-                    เคลมประกัน {ticket.originalTicketNumber ? `(#${ticket.originalTicketNumber})` : ''}
-                  </span>
-                )}
-              </div>
-
-              {/* Signatures Section strictly in 1 single horizontal row */}
-              {docType === 'quotation' ? (
-                /* QUOTATION SIGNATURES: Provider & Approving Authority */
-                <div className="pt-1 border-t border-slate-300">
-                  <div className="grid grid-cols-2 gap-2 text-center text-[8px] text-slate-700">
-                    <div className="border border-slate-200 p-1.5 rounded space-y-1">
-                      <p className="font-bold text-blue-900">ผู้เสนอราคา (ทางร้าน)</p>
-                      <div className="border-b border-dotted border-slate-400 mx-2 pt-2"></div>
-                      <p>(........................................................)</p>
-                      <p className="text-[7.5px] text-slate-400">{shopSettings.shopName} | วันที่: {todayThai}</p>
-                    </div>
-
-                    <div className="border border-blue-200 bg-blue-50/30 p-1.5 rounded space-y-0.5 text-left">
-                      <div className="flex items-center gap-1 font-bold text-blue-950 pb-0.5 border-b border-blue-200 text-[8px]">
-                        <CheckSquare className="w-3 h-3 text-blue-700 shrink-0" />
-                        <span>ส่วนผู้อนุมัติสั่งจ้าง / ขออนุมัติงบประมาณ</span>
+                    {/* Device Box */}
+                    <div className="bg-slate-50 p-1.5 rounded border border-slate-200 space-y-0.5">
+                      <div className="font-bold text-[8px] text-blue-800 border-b border-slate-200 pb-0.5">
+                        ข้อมูลอุปกรณ์ (Device)
                       </div>
-                      <p className="text-[7.5px] text-slate-600">
-                        [ &nbsp; ] อนุมัติให้ดำเนินการซ่อมตามราคาที่เสนอ
+                      <p className="font-bold text-[9.5px] text-slate-900">{ticket.brand} {ticket.model}</p>
+                      <p className="text-slate-700">
+                        ประเภท: <span className="font-semibold">{DEVICE_LABELS[ticket.deviceType]?.label || ticket.deviceType}</span>
+                        {ticket.serialNumber && <span> | S/N: <span className="font-mono">{ticket.serialNumber}</span></span>}
                       </p>
-                      <div className="border-b border-dotted border-slate-400 mx-1 pt-1.5"></div>
-                      <p className="text-center text-[7.5px] pt-0.5">(........................................................)</p>
-                      <p className="text-[7px] text-slate-400 text-center">หัวหน้าหน่วยงาน / วันที่ ...... / ...... / ..........</p>
+                      <p className="text-slate-600 truncate text-[8px]">
+                        อุปกรณ์ติดมา: <span className="font-medium">{ticket.accessories?.join(', ') || 'ไม่มี'}</span>
+                      </p>
+                      {docType === 'invoice' && ticket.govCreditInfo && (
+                        <div className="pt-0.5 border-t border-slate-200 text-[8px] space-y-0.2">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-slate-700">เครดิต: {ticket.govCreditInfo.creditDays} วัน</span>
+                            <span className="font-mono font-bold text-blue-800">ครบกำหนด: {ticket.govCreditInfo.dueDate || '-'}</span>
+                          </div>
+                          {dueStatus && (
+                            <div className="text-right">
+                              <span className={`text-[7.5px] px-1 py-0.2 rounded border ${dueStatus.badgeClass}`}>
+                                {dueStatus.badgeLabel}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                </div>
-              ) : isGovCredit ? (
-                /* GOVERNMENT CREDIT SIGNATURES: Strictly 1 Single Horizontal Row with 3 Boxes */
-                <div className="pt-1 border-t border-slate-300">
-                  <div className="grid grid-cols-3 gap-1.5 text-center text-[8px] text-slate-700">
-                    <div className="border border-slate-200 p-1 rounded space-y-1">
-                      <p className="font-bold text-[8px]">ผู้ส่งมอบงาน / ผู้วางบิล</p>
-                      <div className="border-b border-dotted border-slate-400 mx-1.5 pt-2"></div>
-                      <p>(................................................)</p>
-                      <p className="text-[7px] text-slate-400 truncate">{shopSettings.shopName}</p>
-                    </div>
-
-                    <div className="border border-slate-200 p-1 rounded space-y-1">
-                      <p className="font-bold text-[8px]">ผู้รับมอบงาน / ผู้ตรวจงาน</p>
-                      <div className="border-b border-dotted border-slate-400 mx-1.5 pt-2"></div>
-                      <p>(................................................)</p>
-                      <p className="text-[7px] text-slate-400 truncate">{ticket.govCreditInfo?.agencyName || ticket.customerName}</p>
-                    </div>
-
-                    <div className="border border-slate-200 p-1 rounded space-y-1">
-                      <p className="font-bold text-[8px]">กรรมการตรวจรับพัสดุ</p>
-                      <div className="border-b border-dotted border-slate-400 mx-1.5 pt-2"></div>
-                      <p>(................................................)</p>
-                      <p className="text-[7px] text-slate-400">วันที่ ...... / ...... / ..........</p>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                /* STANDARD SIGNATURES: 1 Single Row with 2 Boxes */
-                <div className="grid grid-cols-2 gap-4 pt-1 border-t border-slate-300 text-center text-[8.5px] text-slate-700">
-                  <div className="border border-slate-200 p-1.5 rounded space-y-1">
-                    <p className="font-medium">ลงชื่อ .....................................................</p>
-                    <p className="text-[8px] text-slate-600 font-bold">( {ticket.customerName} )</p>
-                    <p className="text-[7.5px] text-slate-400">ลูกค้าผู้ส่งซ่อม / ผู้รับมอบเครื่อง</p>
                   </div>
 
-                  <div className="border border-slate-200 p-1.5 rounded space-y-1">
-                    <p className="font-medium">ลงชื่อ .....................................................</p>
-                    <p className="text-[8px] text-slate-600 font-bold">( {ticket.technicianName || 'ช่างผู้รับผิดชอบ'} )</p>
-                    <p className="text-[7.5px] text-slate-400">{shopSettings.shopName}</p>
+                  {/* Problem & Diagnosis */}
+                  <div className="p-1.5 rounded bg-slate-50 border border-slate-200 text-[8.5px] space-y-0.5">
+                    <div className="flex justify-between items-start gap-1">
+                      <div className="flex-1 truncate">
+                        <span className="font-bold text-slate-800">อาการเสีย/งาน: </span>
+                        <span className="text-slate-700 font-medium">{ticket.problemDescription}</span>
+                      </div>
+                      {ticket.initialConditionNotes && (
+                        <div className="text-slate-500 shrink-0 text-[8px]">
+                          <span>สภาพ: {ticket.initialConditionNotes}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {ticket.technicianNotes && (
+                      <div className="pt-0.5 border-t border-slate-200/80 text-blue-900 truncate">
+                        <span className="font-bold">ผลการตรวจเช็ค: </span>
+                        <span>{ticket.technicianNotes}</span>
+                        <span className="text-slate-500 ml-1">({ticket.technicianName || 'ช่างประจำร้าน'})</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Items & Parts Table */}
+                  <div className="border border-slate-200 rounded overflow-hidden text-[8.5px]">
+                    <table className="w-full text-left">
+                      <thead className="bg-slate-100 text-slate-800 font-bold border-b border-slate-200">
+                        <tr>
+                          <th className="py-0.5 px-1.5 w-6 text-center">#</th>
+                          <th className="py-0.5 px-1.5">รายการค่าบริการและอะไหล่</th>
+                          <th className="py-0.5 px-1.5 text-center w-10">จำนวน</th>
+                          <th className="py-0.5 px-1.5 text-right w-14">หน่วยละ</th>
+                          <th className="py-0.5 px-1.5 text-right w-16">รวม (บาท)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        <tr>
+                          <td className="py-0.5 px-1.5 text-center text-slate-400">1</td>
+                          <td className="py-0.5 px-1.5 font-medium">ค่าบริการตรวจเช็คและค่าแรงซ่อมบำรุง</td>
+                          <td className="py-0.5 px-1.5 text-center">1</td>
+                          <td className="py-0.5 px-1.5 text-right">฿{(ticket.laborCost || 0).toLocaleString()}</td>
+                          <td className="py-0.5 px-1.5 text-right font-semibold">฿{(ticket.laborCost || 0).toLocaleString()}</td>
+                        </tr>
+                        {ticket.partsUsed?.map((part, i) => (
+                          <tr key={i}>
+                            <td className="py-0.5 px-1.5 text-center text-slate-400">{i + 2}</td>
+                            <td className="py-0.5 px-1.5 font-medium truncate max-w-[200px]">
+                              {part.itemName} {part.itemCode && <span className="font-mono text-slate-400 text-[8px]">({part.itemCode})</span>}
+                            </td>
+                            <td className="py-0.5 px-1.5 text-center">{part.quantity}</td>
+                            <td className="py-0.5 px-1.5 text-right">฿{part.unitPrice.toLocaleString()}</td>
+                            <td className="py-0.5 px-1.5 text-right font-semibold">฿{part.totalPrice.toLocaleString()}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
-              )}
+
+                {/* BOTTOM HALF: Totals, QR Codes, Warranty & Signatures */}
+                <div className="space-y-1.5 pt-1.5 border-t border-slate-200">
+                  {/* Pricing Totals & QR Code / Payment Area (Side-by-side) */}
+                  <div className="grid grid-cols-2 gap-1.5 pt-0.5">
+                    {/* Left: QR Codes / Account Info */}
+                    <div className="p-1.5 rounded bg-slate-50 border border-slate-200 flex items-center justify-around gap-1.5">
+                      <div className="flex flex-col items-center text-center">
+                        {qrCodeDataUrl ? (
+                          <img
+                            src={qrCodeDataUrl}
+                            alt="Tracking QR"
+                            className="w-11 h-11 bg-white p-0.5 rounded border border-slate-300"
+                          />
+                        ) : (
+                          <div className="w-11 h-11 bg-slate-200 rounded flex items-center justify-center text-[7px]">QR</div>
+                        )}
+                        <span className="text-[7.5px] font-bold text-blue-900 mt-0.5">
+                          เช็คสถานะสด
+                        </span>
+                      </div>
+
+                      <div className="flex flex-col items-center text-center">
+                        {promptPayQrUrl ? (
+                          <img
+                            src={promptPayQrUrl}
+                            alt="PromptPay QR"
+                            className="w-11 h-11 bg-white p-0.5 rounded border border-slate-300"
+                          />
+                        ) : (
+                          <div className="w-11 h-11 bg-slate-200 rounded flex items-center justify-center text-[7px]">QR</div>
+                        )}
+                        <span className="text-[7.5px] font-bold text-emerald-900 mt-0.5">
+                          พร้อมเพย์
+                        </span>
+                      </div>
+
+                      <div className="text-[7.5px] text-slate-600 leading-tight space-y-0.2 pl-1 border-l border-slate-200">
+                        <p className="font-mono font-bold text-slate-800">{shopSettings.promptPayId || '083-426-8058'}</p>
+                        <p className="text-slate-500 truncate max-w-[85px]">{shopSettings.bankAccountName || shopSettings.shopName}</p>
+                        {shopSettings.bankAccountNumber && (
+                          <p className="font-mono text-slate-400">{shopSettings.bankAccountNumber}</p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Right: Pricing Totals */}
+                    <div className="p-1.5 rounded bg-slate-50 border border-slate-200 text-[8.5px] space-y-0.5">
+                      <div className="flex justify-between text-slate-600">
+                        <span>ค่าแรง/บริการ:</span>
+                        <span className="font-medium">฿{(ticket.laborCost || 0).toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-600">
+                        <span>ค่าอะไหล่รวม:</span>
+                        <span className="font-medium">฿{(ticket.partsCost || 0).toLocaleString()}</span>
+                      </div>
+                      {(Number(ticket.discount) || 0) > 0 && (
+                        <div className="flex justify-between text-rose-600 font-bold text-[8px]">
+                          <span>ส่วนลดพิเศษ:</span>
+                          <span>-฿{(Number(ticket.discount) || 0).toLocaleString()}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between items-baseline text-[9.5px] font-black text-slate-900 pt-0.5 border-t border-slate-300">
+                        <span>ยอดสุทธิทั้งสิ้น:</span>
+                        <span className="text-blue-700 text-xs">฿{(ticket.totalAmount || 0).toLocaleString()}</span>
+                      </div>
+                      <div className="text-right text-[8px] text-slate-600 font-semibold truncate">
+                        ({totalInBahtText})
+                      </div>
+                      <div className="text-right text-[7.5px] text-slate-500 pt-0.2">
+                        {isGovCredit
+                          ? `เครดิตราชการ (${ticket.govCreditInfo?.billingStatus === 'paid' ? 'ชำระแล้ว' : ticket.govCreditInfo?.billingStatus === 'billed' ? 'รอเบิกเงินฎีกา' : 'รอวางบิล'})`
+                          : ticket.isPaid
+                          ? '✓ ชำระเงินเรียบร้อยแล้ว'
+                          : 'ชำระเมื่อรับเครื่อง'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Official Warranty Details */}
+                  <div className="text-[8px] bg-slate-50 px-1.5 py-1 rounded border border-slate-200 leading-tight flex items-center justify-between gap-1">
+                    <div className="flex items-center gap-1 truncate">
+                      <span className="font-bold text-slate-900">🛡️ รับประกันงานซ่อม:</span>
+                      <span className="text-blue-800 font-bold">
+                        {(ticket.warrantyDays ?? 30) > 0 ? `${ticket.warrantyDays ?? 30} วัน` : 'ไม่มีประกัน'}
+                      </span>
+                      {ticket.warrantyExpiryDate && (ticket.warrantyDays ?? 30) > 0 && (
+                        <span className="text-slate-500 font-mono">
+                          (ถึง: {ticket.warrantyExpiryDate})
+                        </span>
+                      )}
+                      <span className="text-slate-500 text-[7.5px] ml-1">
+                        * รับประกันเฉพาะอาการเสียเดิมและอะไหล่ที่เปลี่ยนตามใบเสร็จ
+                      </span>
+                    </div>
+                    {ticket.isWarrantyClaim && (
+                      <span className="font-bold text-purple-800 bg-purple-100 px-1 py-0.2 rounded text-[7.5px] shrink-0">
+                        เคลมประกัน {ticket.originalTicketNumber ? `(#${ticket.originalTicketNumber})` : ''}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Signatures Section strictly in 1 single horizontal row */}
+                  {docType === 'quotation' ? (
+                    /* QUOTATION SIGNATURES: Provider & Approving Authority */
+                    <div className="pt-1 border-t border-slate-300">
+                      <div className="grid grid-cols-2 gap-2 text-center text-[8px] text-slate-700">
+                        <div className="border border-slate-200 p-1.5 rounded space-y-1">
+                          <p className="font-bold text-blue-900">ผู้เสนอราคา (ทางร้าน)</p>
+                          <div className="border-b border-dotted border-slate-400 mx-2 pt-2"></div>
+                          <p>(........................................................)</p>
+                          <p className="text-[7.5px] text-slate-400">{shopSettings.shopName} | วันที่: {todayThai}</p>
+                        </div>
+
+                        <div className="border border-blue-200 bg-blue-50/30 p-1.5 rounded space-y-0.5 text-left">
+                          <div className="flex items-center gap-1 font-bold text-blue-950 pb-0.5 border-b border-blue-200 text-[8px]">
+                            <CheckSquare className="w-3 h-3 text-blue-700 shrink-0" />
+                            <span>ส่วนผู้อนุมัติสั่งจ้าง / ขออนุมัติงบประมาณ</span>
+                          </div>
+                          <p className="text-[7.5px] text-slate-600">
+                            [ &nbsp; ] อนุมัติให้ดำเนินการซ่อมตามราคาที่เสนอ
+                          </p>
+                          <div className="border-b border-dotted border-slate-400 mx-1 pt-1.5"></div>
+                          <p className="text-center text-[7.5px] pt-0.5">(........................................................)</p>
+                          <p className="text-[7px] text-slate-400 text-center">หัวหน้าหน่วยงาน / วันที่ ...... / ...... / ..........</p>
+                        </div>
+                      </div>
+                    </div>
+                  ) : isGovCredit ? (
+                    /* GOVERNMENT CREDIT SIGNATURES: Strictly 1 Single Horizontal Row with 3 Boxes */
+                    <div className="pt-1 border-t border-slate-300">
+                      <div className="grid grid-cols-3 gap-1.5 text-center text-[8px] text-slate-700">
+                        <div className="border border-slate-200 p-1 rounded space-y-1">
+                          <p className="font-bold text-[8px]">ผู้ส่งมอบงาน / ผู้วางบิล</p>
+                          <div className="border-b border-dotted border-slate-400 mx-1.5 pt-2"></div>
+                          <p>(................................................)</p>
+                          <p className="text-[7px] text-slate-400 truncate">{shopSettings.shopName}</p>
+                        </div>
+
+                        <div className="border border-slate-200 p-1 rounded space-y-1">
+                          <p className="font-bold text-[8px]">ผู้รับมอบงาน / ผู้ตรวจงาน</p>
+                          <div className="border-b border-dotted border-slate-400 mx-1.5 pt-2"></div>
+                          <p>(................................................)</p>
+                          <p className="text-[7px] text-slate-400 truncate">{ticket.govCreditInfo?.agencyName || ticket.customerName}</p>
+                        </div>
+
+                        <div className="border border-slate-200 p-1 rounded space-y-1">
+                          <p className="font-bold text-[8px]">กรรมการตรวจรับพัสดุ</p>
+                          <div className="border-b border-dotted border-slate-400 mx-1.5 pt-2"></div>
+                          <p>(................................................)</p>
+                          <p className="text-[7px] text-slate-400">วันที่ ...... / ...... / ..........</p>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    /* STANDARD SIGNATURES: 1 Single Row with 2 Boxes */
+                    <div className="grid grid-cols-2 gap-4 pt-1 border-t border-slate-300 text-center text-[8.5px] text-slate-700">
+                      <div className="border border-slate-200 p-1.5 rounded space-y-1">
+                        <p className="font-medium">ลงชื่อ .....................................................</p>
+                        <p className="text-[8px] text-slate-600 font-bold">( {ticket.customerName} )</p>
+                        <p className="text-[7.5px] text-slate-400">ลูกค้าผู้ส่งซ่อม / ผู้รับมอบเครื่อง</p>
+                      </div>
+
+                      <div className="border border-slate-200 p-1.5 rounded space-y-1">
+                        <p className="font-medium">ลงชื่อ .....................................................</p>
+                        <p className="text-[8px] text-slate-600 font-bold">( {ticket.technicianName || 'ช่างผู้รับผิดชอบ'} )</p>
+                        <p className="text-[7.5px] text-slate-400">{shopSettings.shopName}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           ) : (
             /* ================= 80MM POS THERMAL SLIP ================= */

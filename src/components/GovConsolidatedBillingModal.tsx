@@ -563,6 +563,10 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
           </div>
 
           <div className="flex items-center gap-2">
+            <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800 text-purple-700 dark:text-purple-300 text-xs font-semibold">
+              📄 A5 แนวตั้ง (148 × 210 มม.)
+            </span>
+
             <button
               type="button"
               onClick={handlePrint}
@@ -570,7 +574,7 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
               className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-md shadow-purple-500/20 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
             >
               <Printer className="w-4 h-4" />
-              <span>พิมพ์{docType === 'quotation' ? 'ใบเสนอราคา' : docType === 'receipt' ? 'ใบเสร็จรับเงิน' : 'ใบวางบิล'} (A4)</span>
+              <span>พิมพ์{docType === 'quotation' ? 'ใบเสนอราคา' : docType === 'receipt' ? 'ใบเสร็จรับเงิน' : 'ใบวางบิล'} (A5 แนวตั้ง)</span>
             </button>
 
             <button
@@ -837,13 +841,20 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
                 </div>
 
                 {/* Printable Document Paper Area */}
-                <div className="flex-1 overflow-y-auto p-3 sm:p-6 flex justify-center print:p-0 print:overflow-visible">
+                <div className="flex-1 overflow-y-auto p-3 sm:p-6 bg-slate-200/70 dark:bg-slate-950 flex flex-col items-center print:p-0 print:bg-white print:overflow-visible">
+                  {/* Paper Dimension Visual Indicator for Screen */}
+                  <div className="mb-2 px-3 py-1 rounded-full bg-blue-100 dark:bg-blue-950/70 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-xs font-bold flex items-center gap-1.5 shadow-xs print:hidden">
+                    <span>📄 สัดส่วนกระดาษ A5 แนวตั้ง (148 มม. × 210 มม.)</span>
+                  </div>
+
                   <div
                     ref={printAreaRef}
                     id="gov-consolidated-statement"
-                    className="bg-white text-slate-900 w-full max-w-[140mm] p-2.5 sm:p-3 mx-auto shadow-none print:shadow-none border border-slate-200 print:border-none text-[8.5px] font-sans leading-tight space-y-1.5 a5-printable-page"
+                    className="a5-portrait-paper bg-white text-slate-900 w-[148mm] min-h-[210mm] max-w-full p-4 mx-auto shadow-2xl rounded-sm border border-slate-300 text-[8.5px] leading-tight flex flex-col justify-between font-sans print:shadow-none print:border-none print:w-[140mm] print:h-[202mm] print:min-h-[202mm] print:p-0 print:m-0"
                   >
-                    {/* Header: Shop Information */}
+                    {/* TOP HALF: Header, Gov Info & Bills Table */}
+                    <div className="space-y-1.5">
+                      {/* Header: Shop Information */}
                     <div className="flex justify-between items-start border-b-2 border-slate-800 pb-1.5">
                       <div className="flex items-start gap-2 max-w-[340px]">
                         {shopSettings.logoUrl ? (
@@ -1021,7 +1032,10 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
                         </tbody>
                       </table>
                     </div>
+                  </div>
 
+                  {/* BOTTOM HALF: Totals, Signatures & Footer */}
+                  <div className="space-y-1.5 pt-1.5 border-t border-slate-200">
                     {/* Summary Totals & PromptPay Section (Side-by-side) */}
                     <div className="grid grid-cols-2 gap-1.5 pt-0.5">
                       {/* Left: PromptPay QR for Combined Grand Total */}
@@ -1156,6 +1170,7 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
                     </div>
                   </div>
                 </div>
+              </div>
               </>
             ) : (
               <div className="flex-1 flex items-center justify-center p-8 text-center text-slate-400 text-xs">
