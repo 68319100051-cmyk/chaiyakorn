@@ -427,13 +427,13 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
                       )}
                     </div>
 
-                    {/* Right: Bank Details & EXACT 3x3 cm QR Code (5 cols) */}
+                    {/* Right: Bank Details & QR Codes: 2x2 cm Tracking QR & 3x3 cm PromptPay QR (5 cols) */}
                     <div className="col-span-5 p-1 flex items-center justify-between gap-1 bg-slate-50/60">
                       <div className="space-y-0.2 text-[7px] leading-tight">
                         <p className="font-bold text-slate-900">
                           บัญชีธนาคาร <span className="font-normal">{shopSettings.bankName || 'กสิกรไทย'}</span>
                         </p>
-                        <p className="font-bold text-slate-900 truncate max-w-[100px]">
+                        <p className="font-bold text-slate-900 truncate max-w-[85px]">
                           ชื่อบัญชี <span className="font-normal">{shopSettings.bankAccountName || shopSettings.shopName}</span>
                         </p>
                         {shopSettings.bankAccountNumber && (
@@ -450,27 +450,40 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
                               ? 'bg-purple-100 text-purple-800'
                               : 'bg-blue-100 text-blue-800'
                           }`}>
-                            {ticket.isPaid ? '✓ ชำระเงินเรียบร้อย' : isGovCredit ? 'เครดิตราชการ' : 'สแกนจ่ายผ่านพร้อมเพย์'}
+                            {ticket.isPaid ? '✓ ชำระเงินเรียบร้อย' : isGovCredit ? 'เครดิตราชการ' : 'สแกนชำระเงิน'}
                           </span>
                         </div>
                       </div>
 
-                      {/* QR Code strictly 3x3 cm (30mm x 30mm) as requested */}
-                      <div className="shrink-0 flex flex-col items-center">
-                        {promptPayQrUrl ? (
-                          <div className="w-[30mm] h-[30mm] p-0.5 bg-white border border-slate-300 rounded-xs shadow-2xs flex items-center justify-center">
-                            <img
-                              src={promptPayQrUrl}
-                              alt="PromptPay QR Code 3x3"
-                              className="w-full h-full object-contain"
-                            />
-                          </div>
-                        ) : (
-                          <div className="w-[30mm] h-[30mm] bg-slate-100 border border-slate-300 flex items-center justify-center text-[7px] text-slate-400">
-                            QR 3x3cm
+                      {/* QR Codes Group: Tracking QR 2x2 cm + PromptPay QR 3x3 cm */}
+                      <div className="shrink-0 flex items-end gap-1.5">
+                        {/* Live Status Tracking QR: EXACTLY 2x2 cm (20mm x 20mm) */}
+                        {qrCodeDataUrl && (
+                          <div className="flex flex-col items-center">
+                            <div className="w-[20mm] h-[20mm] p-0.5 bg-white border border-slate-300 rounded-xs shadow-2xs flex items-center justify-center">
+                              <img
+                                src={qrCodeDataUrl}
+                                alt="Live Tracking QR 2x2"
+                                className="w-full h-full object-contain"
+                              />
+                            </div>
+                            <span className="text-[6px] text-blue-900 font-bold mt-0.2">เช็คสถานะสด (2×2 ซม.)</span>
                           </div>
                         )}
-                        <span className="text-[6px] text-slate-400 mt-0.2">ขนาด 3×3 ซม.</span>
+
+                        {/* PromptPay QR Code: EXACTLY 3x3 cm (30mm x 30mm) */}
+                        {promptPayQrUrl && (
+                          <div className="flex flex-col items-center">
+                            <div className="w-[30mm] h-[30mm] p-0.5 bg-white border border-slate-300 rounded-xs shadow-2xs flex items-center justify-center">
+                              <img
+                                src={promptPayQrUrl}
+                                alt="PromptPay QR Code 3x3"
+                                className="w-full h-full object-contain"
+                              />
+                            </div>
+                            <span className="text-[6px] text-emerald-900 font-bold mt-0.2">พร้อมเพย์ (3×3 ซม.)</span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -666,11 +679,17 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
                           <p className="text-[6px] text-slate-500">วันที่: {todayThai}</p>
                         </div>
 
-                        {/* Tracking QR Code */}
+                        {/* Tracking QR Code: Exactly 2x2 cm (20mm x 20mm) */}
                         {qrCodeDataUrl && (
                           <div className="flex flex-col items-center shrink-0 ml-1">
-                            <img src={qrCodeDataUrl} alt="Tracking QR" className="w-7 h-7 p-0.5 bg-white border border-slate-300 rounded-xs" />
-                            <span className="text-[5.5px] text-slate-500">เช็คสถานะสด</span>
+                            <div className="w-[20mm] h-[20mm] p-0.5 bg-white border border-slate-300 rounded-xs shadow-2xs flex items-center justify-center">
+                              <img
+                                src={qrCodeDataUrl}
+                                alt="Tracking QR 2x2"
+                                className="w-full h-full object-contain"
+                              />
+                            </div>
+                            <span className="text-[6px] text-blue-900 font-bold mt-0.5">เช็คสถานะสด 2×2</span>
                           </div>
                         )}
                       </div>
