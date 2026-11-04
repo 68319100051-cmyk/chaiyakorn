@@ -310,7 +310,7 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
         </div>
 
         {/* Scrollable Printable Paper Preview Area */}
-        <div className="flex-1 overflow-y-auto p-3 sm:p-6 bg-slate-200/70 dark:bg-slate-950 flex flex-col items-center print:p-0 print:bg-white print:overflow-visible">
+        <div className="flex-1 overflow-y-auto overflow-x-auto w-full p-2 sm:p-6 bg-slate-200/70 dark:bg-slate-950 flex flex-col items-center print:p-0 print:bg-white print:overflow-visible">
           
           {/* ================= A5 FORMAT (148mm x 210mm) ================= */}
           {printFormat === 'a5' ? (
@@ -559,7 +559,7 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
                         <span className="font-mono">0.00</span>
                       </div>
                       <div className="flex justify-between items-baseline font-black text-[9px] text-slate-950 pt-0.5 border-t-2 border-slate-800">
-                        <span>รวมสุทธิ</span>
+                        <span>{docType === 'quotation' || docType === 'work_order' ? 'ราคาประเมินเบื้องต้น' : 'รวมสุทธิ'}</span>
                         <span className="font-mono text-[11px] font-black text-blue-900">
                           ฿{(ticket.totalAmount || 0).toLocaleString('th-TH', { minimumFractionDigits: 2 })}
                         </span>
@@ -567,18 +567,34 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
                     </div>
                   </div>
 
-                  {/* 6. Warranty Terms */}
-                  <div className="border border-slate-300 rounded p-1 bg-slate-50/40 text-[7px] leading-tight space-y-0.2 my-0.5">
-                    <div className="flex items-center justify-between font-bold text-slate-900">
-                      <span>เงื่อนไขการรับประกันสินค้าและงานซ่อม:</span>
-                      <span className="text-blue-900 font-bold">
-                        🛡️ รับประกัน {(ticket.warrantyDays ?? 30) > 0 ? `${ticket.warrantyDays ?? 30} วัน` : 'ไม่มีประกัน'}
-                        {ticket.warrantyExpiryDate && (ticket.warrantyDays ?? 30) > 0 ? ` (ถึง: ${ticket.warrantyExpiryDate})` : ''}
-                      </span>
+                  {/* 6. Warranty Terms & Live Tracking QR Code */}
+                  <div className="border border-slate-300 rounded p-1.5 bg-slate-50/60 text-[7px] leading-tight my-0.5 flex items-center justify-between gap-2">
+                    <div className="flex-1 space-y-0.5">
+                      <div className="flex items-center justify-between font-bold text-slate-900 border-b border-slate-200 pb-0.5">
+                        <span className="font-extrabold text-[7.5px] text-slate-950">เงื่อนไขการรับประกัน:</span>
+                        <span className="text-blue-900 font-bold">
+                          🛡️ รับประกัน {(ticket.warrantyDays ?? 30) > 0 ? `${ticket.warrantyDays ?? 30} วัน` : 'ไม่มีประกัน'}
+                          {ticket.warrantyExpiryDate && (ticket.warrantyDays ?? 30) > 0 ? ` (ถึง: ${ticket.warrantyExpiryDate})` : ''}
+                        </span>
+                      </div>
+                      <p className="text-slate-800">1. การรับประกันการซ่อมสินค้าจะมีผลเมื่อมีเอกสารฉบับนี้มายืนยันกับทางร้านเท่านั้น</p>
+                      <p className="text-slate-800">2. เมื่อสินค้าได้รับการซ่อมหรือแก้ไขโดยมิใช่การดำเนินการของทางร้าน ถือว่าการรับประกันสิ้นสุดทันที</p>
+                      <p className="text-slate-800">3. ไม่รับประกันกรณีมีการใช้งานผิดประเภท</p>
                     </div>
-                    <p className="text-slate-700">1. การรับประกันการซ่อมสินค้าจะมีผลเมื่อมีเอกสารฉบับนี้มายืนยันกับทางร้านเท่านั้น</p>
-                    <p className="text-slate-700">2. เมื่อสินค้าได้รับการซ่อมหรือแก้ไขโดยมิใช่การดำเนินการของทางร้าน ถือว่าการรับประกันสิ้นสุดทันที</p>
-                    <p className="text-slate-700">3. ไม่รับประกันกรณีมีการใช้งานผิดประเภท ตกน้ำ ฟ้าผ่า หรือมีร่องรอยการแกะซ่อมจากที่อื่น</p>
+
+                    {/* Live Status Tracking QR: Moved into Warranty Terms Box */}
+                    {qrCodeDataUrl && (
+                      <div className="shrink-0 flex flex-col items-center pl-2 border-l border-slate-300">
+                        <div className="w-[20mm] h-[20mm] p-0.5 bg-white border border-slate-300 rounded-xs shadow-2xs flex items-center justify-center">
+                          <img
+                            src={qrCodeDataUrl}
+                            alt="Live Tracking QR 2x2"
+                            className="w-full h-full object-contain"
+                          />
+                        </div>
+                        <span className="text-[6px] text-blue-900 font-bold mt-0.5 whitespace-nowrap">เช็คสถานะสด (2×2 ซม.)</span>
+                      </div>
+                    )}
                   </div>
 
                   {/* 7. Signatures: Enlarged spacious signing boxes */}
@@ -679,30 +695,18 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
                         <p className="truncate text-[7px] text-slate-600"><span className="font-semibold text-slate-700">อาการ:</span> {ticket.problemDescription}</p>
                       </div>
 
-                      {/* Right: Amount, Warranty, Tracking QR (5 cols) */}
-                      <div className="col-span-5 flex items-center justify-between pl-1 border-l border-slate-300">
-                        <div className="space-y-0.5">
-                          <p className="font-bold text-slate-900 text-[8px]">ยอดสุทธิ: <span className="text-blue-900 font-mono font-bold text-[8.5px]">฿{(ticket.totalAmount || 0).toLocaleString()}</span></p>
-                          <p className="text-emerald-800 font-bold text-[7.5px]">{ticket.isPaid ? '✓ ชำระแล้ว' : 'รอชำระเงิน'}</p>
-                          <p className="text-slate-700 text-[7px]">
-                            ประกัน: <span className="font-semibold text-blue-900">{(ticket.warrantyDays ?? 30) > 0 ? `${ticket.warrantyDays ?? 30} วัน` : 'ไม่มี'}</span>
-                          </p>
-                          <p className="text-[6.5px] text-slate-500">วันที่: {todayThai}</p>
-                        </div>
-
-                        {/* Tracking QR Code: Exactly 2x2 cm (20mm x 20mm) */}
-                        {qrCodeDataUrl && (
-                          <div className="flex flex-col items-center shrink-0 ml-1">
-                            <div className="w-[20mm] h-[20mm] p-0.5 bg-white border border-slate-300 rounded-xs shadow-2xs flex items-center justify-center">
-                              <img
-                                src={qrCodeDataUrl}
-                                alt="Tracking QR 2x2"
-                                className="w-full h-full object-contain"
-                              />
-                            </div>
-                            <span className="text-[6px] text-blue-900 font-bold mt-0.5">เช็คสถานะสด 2×2</span>
-                          </div>
-                        )}
+                      {/* Right: Amount, Warranty, Status (5 cols) */}
+                      <div className="col-span-5 pl-2 border-l border-slate-300 space-y-0.5">
+                        <p className="font-bold text-slate-900 text-[8px]">
+                          {docType === 'quotation' || docType === 'work_order' ? 'ราคาประเมินเบื้องต้น:' : 'ยอดสุทธิ:'}{' '}
+                          <span className="text-blue-900 font-mono font-bold text-[8.5px]">฿{(ticket.totalAmount || 0).toLocaleString()}</span>
+                        </p>
+                        <p className="text-emerald-800 font-bold text-[7.5px]">{ticket.isPaid ? '✓ ชำระแล้ว' : 'รอชำระเงิน'}</p>
+                        <p className="text-slate-700 text-[7px]">
+                          ประกัน: <span className="font-semibold text-blue-900">{(ticket.warrantyDays ?? 30) > 0 ? `${ticket.warrantyDays ?? 30} วัน` : 'ไม่มี'}</span>
+                        </p>
+                        <p className="text-[6.5px] text-slate-500">วันที่: {todayThai}</p>
+                        <p className="text-[6.5px] text-slate-500 truncate">ช่าง/ผู้รับเครื่อง: {ticket.technicianName || shopSettings.shopName}</p>
                       </div>
                     </div>
 
@@ -782,7 +786,7 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
                   </>
                 )}
                 <div className="flex justify-between font-bold text-xs pt-1 border-t border-slate-300">
-                  <span>ยอดสุทธิ:</span>
+                  <span>{docType === 'quotation' || docType === 'work_order' ? 'ราคาประเมินเบื้องต้น:' : 'ยอดสุทธิ:'}</span>
                   <span>฿{(ticket.totalAmount || 0).toLocaleString()}</span>
                 </div>
               </div>

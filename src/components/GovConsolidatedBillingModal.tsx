@@ -843,7 +843,7 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
                 </div>
 
                 {/* Printable Document Paper Area */}
-                <div className="flex-1 overflow-y-auto p-3 sm:p-6 bg-slate-200/70 dark:bg-slate-950 flex flex-col items-center print:p-0 print:bg-white print:overflow-visible">
+                <div className="flex-1 overflow-y-auto overflow-x-auto w-full p-2 sm:p-6 bg-slate-200/70 dark:bg-slate-950 flex flex-col items-center print:p-0 print:bg-white print:overflow-visible">
                   {/* Paper Dimension Visual Indicator for Screen */}
                   <div className="mb-2 px-3 py-1 rounded-full bg-blue-100 dark:bg-blue-950/70 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-xs font-bold flex items-center gap-1.5 shadow-xs print:hidden">
                     <span>📄 สัดส่วนกระดาษ A5 แนวตั้ง (148 มม. × 210 มม.)</span>

@@ -254,7 +254,7 @@ export default function App() {
       />
 
       {/* Main Admin Content Area (Hidden during printing so only the ticket prints) */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 print:hidden">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 pb-24 md:pb-8 print:hidden">
         {activeTab === 'dashboard' && (
           <Dashboard
             tickets={tickets}
@@ -329,7 +329,7 @@ export default function App() {
       </main>
 
       {/* Admin Footer (hidden in print) */}
-      <footer className="border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 py-4 text-center text-xs text-slate-500 print:hidden">
+      <footer className="border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 py-4 pb-20 md:pb-4 text-center text-xs text-slate-500 print:hidden">
         <div className="flex flex-col sm:flex-row items-center justify-center gap-2">
           <span>{shopSettings.shopName}</span>
           <span className="hidden sm:inline">•</span>

@@ -226,8 +226,8 @@ export const RepairTickets: React.FC<RepairTicketsProps> = ({
       </div>
 
       {/* Main Page View Tabs (Active vs Closed Separation) */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-white dark:bg-slate-800 p-2 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs">
-        <div className="flex items-center gap-1.5 flex-wrap">
+      <div className="flex flex-wrap items-center justify-between gap-2.5 bg-white dark:bg-slate-800 p-2 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs">
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 max-w-full scrollbar-none sm:flex-wrap">
           <button
             type="button"
             onClick={() => {

@@ -130,26 +130,26 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 sm:gap-3 w-full md:w-auto">
             {onOpenPOS && (
               <button
                 onClick={onOpenPOS}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-bold text-sm shadow-lg shadow-emerald-500/30 hover:from-emerald-600 hover:to-teal-600 transition-all active:scale-95 cursor-pointer"
+                className="flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-bold text-xs sm:text-sm shadow-lg shadow-emerald-500/30 hover:from-emerald-600 hover:to-teal-600 transition-all active:scale-95 cursor-pointer text-center"
               >
-                <ShoppingCart className="w-4 h-4" />
-                <span>ขายหน้าร้าน (POS)</span>
+                <ShoppingCart className="w-4 h-4 shrink-0" />
+                <span className="truncate">ขายหน้าร้าน</span>
               </button>
             )}
             {onOpenGovBilling && (
               <button
                 onClick={onOpenGovBilling}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-semibold text-sm shadow-lg shadow-purple-600/30 transition-all active:scale-95 cursor-pointer"
+                className="flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-semibold text-xs sm:text-sm shadow-lg shadow-purple-600/30 transition-all active:scale-95 cursor-pointer text-center"
                 title="รวมบิลวางบิลราชการอัตโนมัติตามเลขประจำตัวผู้เสียภาษี"
               >
-                <Building2 className="w-4 h-4 text-purple-200" />
-                <span>รวมบิลวางบิลราชการ</span>
+                <Building2 className="w-4 h-4 text-purple-200 shrink-0" />
+                <span className="truncate">บิลราชการ</span>
                 {pendingGovBillsCount > 0 && (
-                  <span className="bg-purple-800 text-white text-xs px-2 py-0.5 rounded-full font-bold">
+                  <span className="bg-purple-800 text-white text-[10px] px-1.5 py-0.2 rounded-full font-bold shrink-0">
                     {pendingGovBillsCount}
                   </span>
                 )}
@@ -157,17 +157,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
             )}
             <button
               onClick={onNewTicket}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-500 to-cyan-500 text-white font-semibold text-sm shadow-lg shadow-blue-500/30 hover:from-blue-600 hover:to-cyan-600 transition-all active:scale-95 cursor-pointer"
+              className="flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-gradient-to-r from-blue-500 to-cyan-500 text-white font-bold text-xs sm:text-sm shadow-lg shadow-blue-500/30 hover:from-blue-600 hover:to-cyan-600 transition-all active:scale-95 cursor-pointer text-center"
             >
-              <Plus className="w-4 h-4" />
-              <span>เปิดใบรับซ่อมใหม่</span>
+              <Plus className="w-4 h-4 shrink-0" />
+              <span className="truncate">เปิดใบรับซ่อม</span>
             </button>
             <button
               onClick={onViewAllTickets}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-200 text-sm font-medium border border-slate-700 transition-colors"
+              className="flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-200 text-xs sm:text-sm font-medium border border-slate-700 transition-colors text-center"
             >
-              <span>ดูงานซ่อมทั้งหมด ({tickets.length})</span>
-              <ArrowRight className="w-4 h-4" />
+              <span className="truncate">งานซ่อม ({tickets.length})</span>
+              <ArrowRight className="w-3.5 h-3.5 shrink-0" />
             </button>
           </div>
         </div>

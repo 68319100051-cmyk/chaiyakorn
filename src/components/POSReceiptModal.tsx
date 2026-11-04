@@ -204,7 +204,7 @@ export const POSReceiptModal: React.FC<POSReceiptModalProps> = ({
         </div>
 
         {/* Scrollable Receipt Preview Area */}
-        <div className="flex-1 overflow-y-auto p-3 sm:p-6 bg-slate-200/70 dark:bg-slate-950 flex flex-col items-center print:p-0 print:bg-white print:overflow-visible">
+        <div className="flex-1 overflow-y-auto overflow-x-auto w-full p-2 sm:p-6 bg-slate-200/70 dark:bg-slate-950 flex flex-col items-center print:p-0 print:bg-white print:overflow-visible">
           {paperSize === 'a5' ? (
             /* ================= A5 FORMAT (148mm x 210mm) ================= */
             <div className="flex flex-col items-center w-full">
@@ -461,7 +461,7 @@ export const POSReceiptModal: React.FC<POSReceiptModalProps> = ({
                         <span className="font-mono">0.00</span>
                       </div>
                       <div className="flex justify-between items-baseline font-black text-[9px] text-slate-950 pt-0.5 border-t-2 border-slate-800">
-                        <span>รวมสุทธิ</span>
+                        <span>{docType === 'quotation' ? 'ราคาประเมินเบื้องต้น' : 'รวมสุทธิ'}</span>
                         <span className="font-mono text-[11px] font-black text-blue-900">
                           ฿{sale.totalAmount.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
                         </span>
@@ -476,16 +476,16 @@ export const POSReceiptModal: React.FC<POSReceiptModalProps> = ({
                   </div>
 
                   {/* 6. Warranty Terms */}
-                  <div className="border border-slate-300 rounded p-1 bg-slate-50/40 text-[7px] leading-tight space-y-0.2 my-0.5">
-                    <div className="flex items-center justify-between font-bold text-slate-900">
-                      <span>เงื่อนไขการรับประกันสินค้าและงานซ่อม:</span>
+                  <div className="border border-slate-300 rounded p-1.5 bg-slate-50/60 text-[7px] leading-tight space-y-0.5 my-0.5">
+                    <div className="flex items-center justify-between font-bold text-slate-900 border-b border-slate-200 pb-0.5">
+                      <span className="font-extrabold text-[7.5px] text-slate-950">เงื่อนไขการรับประกัน:</span>
                       <span className="text-blue-900 font-bold">
                         🛡️ สินค้าคุณภาพมาตรฐาน
                       </span>
                     </div>
-                    <p className="text-slate-700">1. การรับประกันการซ่อมสินค้าจะมีผลเมื่อมีเอกสารฉบับนี้มายืนยันกับทางร้านเท่านั้น</p>
-                    <p className="text-slate-700">2. เมื่อสินค้าได้รับการซ่อมหรือแก้ไขโดยมิใช่การดำเนินการของทางร้าน ถือว่าการรับประกันสิ้นสุดทันที</p>
-                    <p className="text-slate-700">3. ไม่รับประกันกรณีมีการใช้งานผิดประเภท ตกน้ำ ฟ้าผ่า หรือมีร่องรอยการแกะซ่อมจากที่อื่น</p>
+                    <p className="text-slate-800">1. การรับประกันการซ่อมสินค้าจะมีผลเมื่อมีเอกสารฉบับนี้มายืนยันกับทางร้านเท่านั้น</p>
+                    <p className="text-slate-800">2. เมื่อสินค้าได้รับการซ่อมหรือแก้ไขโดยมิใช่การดำเนินการของทางร้าน ถือว่าการรับประกันสิ้นสุดทันที</p>
+                    <p className="text-slate-800">3. ไม่รับประกันกรณีมีการใช้งานผิดประเภท</p>
                   </div>
 
                   {/* 7. Signatures */}
@@ -591,7 +591,8 @@ export const POSReceiptModal: React.FC<POSReceiptModalProps> = ({
                       <div className="col-span-5 flex items-center justify-between pl-1 border-l border-slate-300">
                         <div className="space-y-0.2">
                           <p className="font-bold text-slate-900">
-                            ยอดสุทธิ: <span className="text-blue-900 font-mono font-bold text-[8px]">฿{sale.totalAmount.toLocaleString()}</span>
+                            {docType === 'quotation' ? 'ราคาประเมินเบื้องต้น:' : 'ยอดสุทธิ:'}{' '}
+                            <span className="text-blue-900 font-mono font-bold text-[8px]">฿{sale.totalAmount.toLocaleString()}</span>
                           </p>
                           <p className="text-emerald-800 font-bold">
                             ช่องทาง: {paymentMethodLabel[sale.paymentMethod] || sale.paymentMethod}

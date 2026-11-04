@@ -378,7 +378,7 @@ export const POSView: React.FC<POSViewProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {/* Quick Custom Product Entry Button */}
           <button
             type="button"
@@ -550,7 +550,7 @@ export const POSView: React.FC<POSViewProps> = ({
         </div>
 
         {/* Right Column: Cart & Cashier Checkout (5 Cols) */}
-        <div className="lg:col-span-5 xl:col-span-4 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xl flex flex-col divide-y divide-slate-100 dark:divide-slate-700">
+        <div id="pos-checkout-card" className="lg:col-span-5 xl:col-span-4 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xl flex flex-col divide-y divide-slate-100 dark:divide-slate-700">
           {/* Cart Header */}
           <div className="p-4 flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -1394,6 +1394,34 @@ export const POSView: React.FC<POSViewProps> = ({
               )}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Mobile Floating Cart Summary Button */}
+      {cart.length > 0 && (
+        <div className="lg:hidden fixed bottom-16 left-3 right-3 z-30 animate-in slide-in-from-bottom-4 duration-200">
+          <button
+            type="button"
+            onClick={() => {
+              const cartElem = document.getElementById('pos-checkout-card');
+              cartElem?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="w-full bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 text-white p-3 rounded-2xl shadow-2xl shadow-emerald-950/50 border border-emerald-400/40 flex items-center justify-between font-bold text-sm active:scale-98 transition-transform cursor-pointer"
+          >
+            <div className="flex items-center gap-2.5">
+              <span className="p-2 rounded-xl bg-white/20">
+                <ShoppingCart className="w-5 h-5 text-white" />
+              </span>
+              <div className="text-left">
+                <div className="text-[11px] text-emerald-100 font-medium">ตะกร้าสินค้า ({cart.reduce((s, c) => s + c.quantity, 0)} ชิ้น)</div>
+                <div className="text-base font-black">฿{totalAmount.toLocaleString()}</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-1 bg-white text-emerald-800 px-3.5 py-1.5 rounded-xl text-xs font-bold shadow-xs">
+              <span>คิดเงิน</span>
+              <ArrowRight className="w-4 h-4" />
+            </div>
+          </button>
         </div>
       )}
     </div>
