@@ -299,18 +299,12 @@ export const CustomerTrackingView: React.FC<CustomerTrackingViewProps> = ({
                   </div>
                 </div>
 
-                <div className="text-right whitespace-nowrap">
-                  <span className="text-xs text-emerald-100">ยอดชำระ:</span>
-                  <p className="text-2xl font-black">
-                    ฿{ticket.totalAmount.toLocaleString()}
-                  </p>
-                </div>
               </div>
             )}
           </div>
 
-          {/* Details 2 Columns: Repair Notes & Financials */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Details: Repair Notes & Symptoms */}
+          <div>
             {/* Technician Notes & Diagnosis */}
             <div className="bg-white dark:bg-slate-800 rounded-xl p-5 border border-slate-200 dark:border-slate-700 shadow-sm space-y-3">
               <h3 className="font-bold text-slate-800 dark:text-white text-sm flex items-center gap-2">
@@ -348,84 +342,6 @@ export const CustomerTrackingView: React.FC<CustomerTrackingViewProps> = ({
               </div>
             </div>
 
-            {/* Financial Summary & Replaced Parts */}
-            <div className="bg-white dark:bg-slate-800 rounded-xl p-5 border border-slate-200 dark:border-slate-700 shadow-sm space-y-3">
-              <h3 className="font-bold text-slate-800 dark:text-white text-sm flex items-center gap-2">
-                <Package className="w-4 h-4 text-emerald-500" />
-                <span>สรุปค่าใช้จ่ายและอะไหล่ที่เปลี่ยน</span>
-              </h3>
-
-              <div className="space-y-2 text-xs">
-                {ticket.partsUsed?.length > 0 ? (
-                  <div className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
-                    <table className="w-full text-left text-[11px]">
-                      <thead className="bg-slate-50 dark:bg-slate-900 text-slate-500">
-                        <tr>
-                          <th className="py-1.5 px-2.5">อะไหล่ที่เปลี่ยน</th>
-                          <th className="py-1.5 px-2 text-center">จำนวน</th>
-                          <th className="py-1.5 px-2.5 text-right">ราคา</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                        {ticket.partsUsed.map((p, idx) => (
-                          <tr key={idx}>
-                            <td className="py-1.5 px-2.5 text-slate-800 dark:text-slate-200 font-medium">
-                              {p.itemName}
-                            </td>
-                            <td className="py-1.5 px-2 text-center">{p.quantity}</td>
-                            <td className="py-1.5 px-2.5 text-right font-semibold">
-                              ฿{p.totalPrice.toLocaleString()}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <p className="text-slate-400 italic text-[11px]">ไม่มีอะไหล่ที่ต้องเปลี่ยน / เป็นค่าแรงบริการ</p>
-                )}
-
-                <div className="pt-2 border-t border-slate-100 dark:border-slate-700 space-y-1">
-                  <div className="flex justify-between text-slate-500">
-                    <span>ค่าบริการ/แรง:</span>
-                    <span>฿{(ticket.laborCost || 0).toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between text-slate-500">
-                    <span>ค่าอะไหล่รวม:</span>
-                    <span>฿{(ticket.partsCost || 0).toLocaleString()}</span>
-                  </div>
-                  {(Number(ticket.discount) || 0) > 0 && (
-                    <>
-                      <div className="flex justify-between text-slate-400 pt-1 border-t border-slate-200 dark:border-slate-700 text-[11px]">
-                        <span>รวมก่อนหักส่วนลด:</span>
-                        <span>฿{((ticket.laborCost || 0) + (ticket.partsCost || 0)).toLocaleString()}</span>
-                      </div>
-                      <div className="flex justify-between text-rose-500 font-semibold bg-rose-50 dark:bg-rose-950/40 px-2 py-0.5 rounded">
-                        <span>✓ ส่วนลดพิเศษจากทางร้าน:</span>
-                        <span>-฿{(Number(ticket.discount) || 0).toLocaleString()}</span>
-                      </div>
-                    </>
-                  )}
-                  <div className="flex justify-between text-sm font-bold text-slate-900 dark:text-white pt-1 border-t border-slate-200 dark:border-slate-700">
-                    <span>ยอดสุทธิที่ต้องชำระ:</span>
-                    <span className="text-blue-600 dark:text-blue-400 text-base">
-                      ฿{(ticket.totalAmount || 0).toLocaleString()}
-                    </span>
-                  </div>
-                  <div className="text-right text-[11px]">
-                    <span
-                      className={`inline-block px-2 py-0.5 rounded font-semibold ${
-                        ticket.isPaid
-                          ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
-                          : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
-                      }`}
-                    >
-                      {ticket.isPaid ? '✓ ชำระเงินเรียบร้อยแล้ว' : 'ยังไม่ชำระ (ชำระเมื่อมารับเครื่อง)'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
           </div>
 
           {/* Warranty Certificate & Countdown Card */}

@@ -200,13 +200,6 @@ export const CustomerPublicPortal: React.FC<CustomerPublicPortalProps> = ({
                     </p>
                   </div>
                 </div>
-
-                <div className="pt-3 border-t border-emerald-500/40 flex items-center justify-between text-xs">
-                  <span className="text-emerald-100 font-medium">ยอดชำระที่ต้องชำระเมื่อรับเครื่อง:</span>
-                  <span className="text-2xl font-black text-white">
-                    ฿{ticket.totalAmount.toLocaleString()}
-                  </span>
-                </div>
               </div>
             )}
 
@@ -335,73 +328,6 @@ export const CustomerPublicPortal: React.FC<CustomerPublicPortalProps> = ({
               </div>
             </div>
 
-            {/* Pricing & Replaced Parts Card */}
-            <div className="bg-slate-800/90 rounded-2xl p-5 border border-slate-700/80 shadow-lg space-y-3">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                <Package className="w-4 h-4 text-emerald-400" />
-                <span>สรุปค่าบริการและอะไหล่</span>
-              </h3>
-
-              {ticket.partsUsed && ticket.partsUsed.length > 0 && (
-                <div className="border border-slate-700 rounded-xl overflow-hidden text-xs">
-                  <div className="bg-slate-900/80 px-3 py-2 text-slate-400 font-semibold text-[11px] flex justify-between">
-                    <span>รายการอะไหล่ที่เปลี่ยน</span>
-                    <span>ราคา</span>
-                  </div>
-                  <div className="divide-y divide-slate-700/60">
-                    {ticket.partsUsed.map((p, idx) => (
-                      <div key={idx} className="px-3 py-2 flex justify-between items-center text-[11px]">
-                        <span className="text-slate-200">{p.itemName} ({p.quantity} ชิ้น)</span>
-                        <span className="font-semibold text-white">฿{p.totalPrice.toLocaleString()}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Total Calculation */}
-              <div className="pt-2 text-xs space-y-1.5">
-                <div className="flex justify-between text-slate-400">
-                  <span>ค่าบริการ/แรงตรวจเช็ค:</span>
-                  <span>฿{(ticket.laborCost || 0).toLocaleString()}</span>
-                </div>
-                {(ticket.partsCost || 0) > 0 && (
-                  <div className="flex justify-between text-slate-400">
-                    <span>ค่าอะไหล่รวม:</span>
-                    <span>฿{(ticket.partsCost || 0).toLocaleString()}</span>
-                  </div>
-                )}
-                {(Number(ticket.discount) || 0) > 0 && (
-                  <>
-                    <div className="flex justify-between text-slate-500 pt-1 border-t border-slate-700/60 text-[11px]">
-                      <span>รวมค่าแรงและอะไหล่:</span>
-                      <span>฿{((ticket.laborCost || 0) + (ticket.partsCost || 0)).toLocaleString()}</span>
-                    </div>
-                    <div className="flex justify-between text-rose-400 font-semibold bg-rose-950/40 px-2 py-1 rounded border border-rose-900/60">
-                      <span>✓ ส่วนลดพิเศษจากทางร้าน:</span>
-                      <span>-฿{(Number(ticket.discount) || 0).toLocaleString()}</span>
-                    </div>
-                  </>
-                )}
-                <div className="pt-2 border-t border-slate-700 flex justify-between items-baseline">
-                  <span className="font-bold text-sm text-white">ยอดสุทธิที่ต้องชำระ:</span>
-                  <span className="text-xl font-black text-blue-400">
-                    ฿{(ticket.totalAmount || 0).toLocaleString()}
-                  </span>
-                </div>
-                <div className="text-right text-[11px]">
-                  <span
-                    className={`inline-block px-2.5 py-0.5 rounded-full font-bold ${
-                      ticket.isPaid
-                        ? 'bg-emerald-950 text-emerald-300 border border-emerald-700'
-                        : 'bg-amber-950 text-amber-300 border border-amber-700'
-                    }`}
-                  >
-                    {ticket.isPaid ? '✓ ชำระเงินเรียบร้อยแล้ว' : 'ยังไม่ชำระ (ชำระเมื่อรับเครื่อง)'}
-                  </span>
-                </div>
-              </div>
-            </div>
 
             {/* Warranty Certificate & Countdown Card */}
             {(() => {

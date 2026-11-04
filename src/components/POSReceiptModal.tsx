@@ -216,7 +216,8 @@ export const POSReceiptModal: React.FC<POSReceiptModalProps> = ({
               <div
                 ref={printContentRef}
                 id="pos-receipt-print-area"
-                className="a5-portrait-paper bg-white text-slate-900 w-[148mm] min-h-[210mm] max-w-full p-3.5 mx-auto shadow-2xl rounded-sm border border-slate-300 text-[8px] leading-tight flex flex-col justify-between font-sans print:shadow-none print:border-none print:w-[140mm] print:h-[202mm] print:min-h-[202mm] print:p-0 print:m-0"
+                style={{ fontFamily: "'Prompt', 'Sarabun', -apple-system, sans-serif" }}
+                className="a5-portrait-paper bg-white text-slate-900 w-[148mm] min-h-[210mm] max-w-full p-3.5 mx-auto shadow-2xl rounded-sm border border-slate-300 text-[8.5px] leading-tight flex flex-col justify-between print:shadow-none print:border-none print:w-[140mm] print:h-[202mm] print:min-h-[202mm] print:p-0 print:m-0"
               >
                 {/* ================= MAIN RECEIPT SECTION ================= */}
                 <div className="flex flex-col justify-between flex-1">
@@ -383,7 +384,7 @@ export const POSReceiptModal: React.FC<POSReceiptModalProps> = ({
                             QR 3x3cm
                           </div>
                         )}
-                        <span className="text-[6px] text-slate-400 mt-0.2">ขนาด 3×3 ซม.</span>
+                        <span className="text-[7.5px] text-slate-700 font-bold mt-0.5">พร้อมเพย์</span>
                       </div>
                     </div>
                   </div>

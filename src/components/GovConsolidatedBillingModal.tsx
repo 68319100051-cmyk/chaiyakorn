@@ -852,7 +852,8 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
                   <div
                     ref={printAreaRef}
                     id="gov-consolidated-statement"
-                    className="a5-portrait-paper bg-white text-slate-900 w-[148mm] min-h-[210mm] max-w-full p-4 mx-auto shadow-2xl rounded-sm border border-slate-300 text-[8.5px] leading-tight flex flex-col justify-between font-sans print:shadow-none print:border-none print:w-[140mm] print:h-[202mm] print:min-h-[202mm] print:p-0 print:m-0"
+                    style={{ fontFamily: "'Prompt', 'Sarabun', -apple-system, sans-serif" }}
+                    className="a5-portrait-paper bg-white text-slate-900 w-[148mm] min-h-[210mm] max-w-full p-4 mx-auto shadow-2xl rounded-sm border border-slate-300 text-[8.5px] leading-tight flex flex-col justify-between print:shadow-none print:border-none print:w-[140mm] print:h-[202mm] print:min-h-[202mm] print:p-0 print:m-0"
                   >
                     {/* TOP HALF: Header, Gov Info & Bills Table */}
                     <div className="space-y-1.5">
