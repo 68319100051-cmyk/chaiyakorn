@@ -221,32 +221,32 @@ export const POSReceiptModal: React.FC<POSReceiptModalProps> = ({
                 {/* ================= MAIN RECEIPT SECTION ================= */}
                 <div className="flex flex-col justify-between flex-1">
                   {/* 1. Header: Logo, Shop Info, Doc Number & Barcode */}
-                  <div className="flex justify-between items-start border-b border-slate-400 pb-1">
-                    <div className="flex items-start gap-2 max-w-[340px]">
+                  <div className="flex justify-between items-start border-b border-slate-400 pb-1.5">
+                    <div className="flex items-start gap-2.5 flex-1 mr-2">
                       {shopSettings.logoUrl ? (
                         <img
                           src={shopSettings.logoUrl}
                           alt={shopSettings.shopName}
-                          className="h-10 w-auto object-contain rounded border border-slate-200 p-0.5 shrink-0"
+                          className="h-13 sm:h-14 w-auto max-w-[100px] object-contain rounded border border-slate-200 p-0.5 shrink-0"
                         />
                       ) : (
-                        <div className="w-8 h-8 rounded bg-blue-700 text-white flex items-center justify-center font-black text-xs shrink-0">
+                        <div className="w-10 h-10 rounded bg-blue-700 text-white flex items-center justify-center font-black text-sm shrink-0">
                           POS
                         </div>
                       )}
-                      <div>
-                        <h1 className="text-sm font-black text-slate-900 tracking-tight leading-tight">
+                      <div className="space-y-0.5">
+                        <h1 className="text-base sm:text-[17px] font-black text-slate-900 tracking-tight leading-tight">
                           {shopSettings.shopName}
                         </h1>
-                        <p className="text-[7.5px] text-slate-700 leading-snug">
+                        <p className="text-[8.5px] text-slate-800 leading-snug">
                           {shopSettings.shopAddress}
                         </p>
-                        <p className="text-[7.5px] text-slate-700 font-medium">
-                          โทร. <span className="font-bold">{shopSettings.shopPhone}</span>
-                          {shopSettings.shopLineId && <span> | LINE: <span className="font-bold">{shopSettings.shopLineId}</span></span>}
+                        <p className="text-[8.5px] text-slate-800 font-medium">
+                          โทร. <span className="font-bold text-slate-900">{shopSettings.shopPhone}</span>
+                          {shopSettings.shopLineId && <span> | LINE: <span className="font-bold text-slate-900">{shopSettings.shopLineId}</span></span>}
                         </p>
-                        <p className="text-[7.5px] text-slate-800 font-medium">
-                          เลขประจำตัวผู้เสียภาษี: <span className="font-mono font-bold">{shopSettings.taxId || '3930500607938'}</span>
+                        <p className="text-[8.5px] text-slate-900 font-medium">
+                          เลขประจำตัวผู้เสียภาษี: <span className="font-mono font-bold text-[9px]">{shopSettings.taxId || '3930500607938'}</span>
                         </p>
                       </div>
                     </div>
@@ -512,18 +512,30 @@ export const POSReceiptModal: React.FC<POSReceiptModalProps> = ({
                       </div>
                     </div>
                   ) : (
-                    <div className="my-0.5 pt-0.5 border-t border-slate-300">
-                      <div className="grid grid-cols-2 gap-4 text-center text-[7.5px]">
-                        <div className="space-y-0.5">
-                          <p className="font-bold text-slate-800">ผู้รับสินค้า / บริการ</p>
-                          <div className="pt-1 text-slate-400">( ................................................................ )</div>
-                          <p className="text-[7px] text-slate-700 font-medium">{sale.customerName || 'ลูกค้าผู้ซื้อสินค้า'}</p>
+                    <div className="my-1 pt-0.5 border-t border-slate-300">
+                      <div className="grid grid-cols-2 gap-3 text-center text-[8px]">
+                        {/* Customer Signature Box - Enlarged */}
+                        <div className="border border-slate-300 rounded p-1.5 bg-slate-50/60 flex flex-col justify-between min-h-[54px]">
+                          <p className="font-bold text-slate-900 text-[8.5px]">ผู้รับสินค้า / บริการ (ลงลายมือชื่อ)</p>
+                          <div className="py-2">
+                            <div className="border-b border-dotted border-slate-400 w-44 mx-auto"></div>
+                          </div>
+                          <div>
+                            <p className="text-[8px] text-slate-800 font-bold">( {sale.customerName || 'ลูกค้าผู้ซื้อสินค้า'} )</p>
+                            <p className="text-[7px] text-slate-500 mt-0.5">วันที่ ...... / ...... / ..........</p>
+                          </div>
                         </div>
 
-                        <div className="space-y-0.5">
-                          <p className="font-bold text-slate-800">ผู้รับเงิน / พนักงานขาย</p>
-                          <div className="pt-1 text-slate-400">( ........................ ร้านพัทลุงปริ้นเตอร์ ........................ )</div>
-                          <p className="text-[7px] text-slate-700 font-medium">{sale.cashierName || shopSettings.shopName}</p>
+                        {/* Shop / Cashier Signature Box - Enlarged */}
+                        <div className="border border-slate-300 rounded p-1.5 bg-slate-50/60 flex flex-col justify-between min-h-[54px]">
+                          <p className="font-bold text-slate-900 text-[8.5px]">ผู้รับเงิน / พนักงานขาย</p>
+                          <div className="py-2">
+                            <div className="border-b border-dotted border-slate-400 w-44 mx-auto"></div>
+                          </div>
+                          <div>
+                            <p className="text-[8px] text-slate-800 font-bold">( {sale.cashierName || shopSettings.shopName} )</p>
+                            <p className="text-[7px] text-slate-500 mt-0.5">วันที่ ...... / ...... / ..........</p>
+                          </div>
                         </div>
                       </div>
                       <p className="text-[6.5px] text-slate-500 text-center mt-0.5">
@@ -534,7 +546,7 @@ export const POSReceiptModal: React.FC<POSReceiptModalProps> = ({
                 </div>
 
                 {/* ================= TEAR-OFF CUSTOMER STUB (ส่วนท้ายใบเสร็จสำหรับตัด) ================= */}
-                <div className="mt-1 pt-1">
+                <div className="mt-1 pt-0.5">
                   {/* Perforated Cutting Line */}
                   <div className="relative my-1 text-center border-t-2 border-dashed border-slate-400">
                     <span className="absolute left-1/2 -top-2 -translate-x-1/2 bg-white px-2 text-[7px] font-bold text-slate-600 flex items-center gap-1 shadow-2xs">
@@ -556,18 +568,21 @@ export const POSReceiptModal: React.FC<POSReceiptModalProps> = ({
                     </div>
 
                     <div className="grid grid-cols-12 gap-1 items-center">
-                      {/* Left: Doc No, Barcode, Customer, Items count (7 cols) */}
-                      <div className="col-span-7 space-y-0.2">
+                      {/* Left: Doc No, Enlarged Barcode (~2x), Customer, Items count (7 cols) */}
+                      <div className="col-span-7 space-y-0.5">
                         <div className="flex items-center gap-1.5">
-                          <span className="font-bold text-slate-900">
-                            เลขที่: <span className="font-mono">{sale.receiptNumber}</span>
+                          <span className="font-bold text-slate-900 text-[8px]">
+                            เลขที่: <span className="font-mono font-black">{sale.receiptNumber}</span>
                           </span>
-                          <Barcode value={sale.receiptNumber} width={0.85} height={14} displayValue={false} className="h-3.5 inline" />
                         </div>
-                        <p className="truncate">
+                        {/* Barcode enlarged ~2x (height 28px vs 14px, width 1.35 vs 0.85) */}
+                        <div className="py-0.5 px-1 bg-white rounded-xs border border-slate-300 inline-block">
+                          <Barcode value={sale.receiptNumber} width={1.35} height={28} displayValue={false} className="h-7 max-w-full inline-block" />
+                        </div>
+                        <p className="truncate text-[7.5px]">
                           <span className="font-semibold text-slate-700">ลูกค้า:</span> <span className="font-bold">{sale.customerName || 'ลูกค้าทั่วไป'}</span> {sale.customerPhone && `(โทร. ${sale.customerPhone})`}
                         </p>
-                        <p className="truncate text-slate-600">
+                        <p className="truncate text-[7px] text-slate-600">
                           <span className="font-semibold text-slate-700">รายการ:</span> {sale.items.map(i => `${i.name} (x${i.quantity})`).join(', ')}
                         </p>
                       </div>

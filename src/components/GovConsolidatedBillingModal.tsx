@@ -1205,10 +1205,13 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
                       <div className="grid grid-cols-12 gap-1 items-center">
                         <div className="col-span-7 space-y-0.2">
                           <div className="flex items-center gap-1.5">
-                            <span className="font-bold text-slate-900">
-                              เลขที่: <span className="font-mono">{activeStatementDocNo}</span>
+                            <span className="font-bold text-slate-900 text-[8px]">
+                              เลขที่: <span className="font-mono font-black">{activeStatementDocNo}</span>
                             </span>
-                            <Barcode value={activeStatementDocNo} width={0.85} height={14} displayValue={false} className="h-3.5 inline" />
+                          </div>
+                          {/* Barcode enlarged ~2x for handheld scanners */}
+                          <div className="py-0.5 px-1 bg-white rounded-xs border border-slate-300 inline-block">
+                            <Barcode value={activeStatementDocNo} width={1.35} height={28} displayValue={false} className="h-7 max-w-full inline-block" />
                           </div>
                           <p className="truncate">
                             <span className="font-semibold text-slate-700">หน่วยงาน:</span> <span className="font-bold">{selectedGroup.agencyName}</span>
