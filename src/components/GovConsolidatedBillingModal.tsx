@@ -29,8 +29,10 @@ import {
   Save,
   Check,
   Info,
-  DollarSign
+  DollarSign,
+  Scissors
 } from 'lucide-react';
+import { Barcode } from './Barcode';
 
 export interface ConsolidatedBillItem {
   source: 'pos' | 'repair';
@@ -893,7 +895,7 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
                         </div>
                       </div>
 
-                      <div className="text-right shrink-0">
+                      <div className="text-right shrink-0 flex flex-col items-end">
                         <span className={`inline-block px-2 py-0.5 rounded font-extrabold text-[9px] uppercase tracking-wider ${activeDocTitle.badge}`}>
                           {activeDocTitle.th}
                         </span>
@@ -903,6 +905,10 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
                         <p className="text-[8px] text-slate-500">
                           วันที่: {todayThaiDate}
                         </p>
+                        <div className="px-2 py-0.2 rounded-full border border-slate-800 text-slate-800 text-[7px] font-bold my-0.5">
+                          สำหรับหน่วยงาน / ลูกค้า
+                        </div>
+                        <Barcode value={activeStatementDocNo} width={1.0} height={18} displayValue={false} className="h-4.5" />
                         {docType === 'quotation' && (
                           <span className="inline-block mt-0.5 px-1.5 py-0.2 rounded bg-blue-50 border border-blue-200 text-blue-800 text-[7.5px] font-bold">
                             กำหนดยืนราคา 30 วัน
@@ -1038,17 +1044,24 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
                   <div className="space-y-1.5 pt-1.5 border-t border-slate-200">
                     {/* Summary Totals & PromptPay Section (Side-by-side) */}
                     <div className="grid grid-cols-2 gap-1.5 pt-0.5">
-                      {/* Left: PromptPay QR for Combined Grand Total */}
+                      {/* Left: PromptPay QR for Combined Grand Total (3x3 cm) */}
                       <div className="p-1.5 rounded bg-slate-50 border border-slate-200 flex items-center justify-around gap-1.5">
-                        {promptPayQrUrl ? (
-                          <img
-                            src={promptPayQrUrl}
-                            alt="PromptPay QR Code"
-                            className="w-11 h-11 bg-white p-0.5 rounded border border-slate-300 shrink-0"
-                          />
-                        ) : (
-                          <div className="w-11 h-11 bg-slate-200 rounded flex items-center justify-center text-[7px]">QR</div>
-                        )}
+                        <div className="flex flex-col items-center shrink-0">
+                          {promptPayQrUrl ? (
+                            <div className="w-[30mm] h-[30mm] p-0.5 bg-white border border-slate-300 rounded-xs shadow-2xs flex items-center justify-center">
+                              <img
+                                src={promptPayQrUrl}
+                                alt="PromptPay QR Code 3x3"
+                                className="w-full h-full object-contain"
+                              />
+                            </div>
+                          ) : (
+                            <div className="w-[30mm] h-[30mm] bg-slate-100 border border-slate-300 flex items-center justify-center text-[7px] text-slate-400">
+                              QR 3x3cm
+                            </div>
+                          )}
+                          <span className="text-[6px] text-slate-400 mt-0.2">ขนาด 3×3 ซม.</span>
+                        </div>
                         <div className="text-[7.5px] space-y-0.2 leading-tight pl-1 border-l border-slate-200">
                           <span className="font-bold text-[#002D62] block text-[8px] flex items-center gap-0.5">
                             <QrCode className="w-2.5 h-2.5 inline text-[#002D62]" />
@@ -1160,13 +1173,75 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
                     )}
 
                     {/* Document Footer */}
-                    <div className="pt-1 text-center text-[7.5px] text-slate-500 border-t border-dashed border-slate-300">
+                    <div className="pt-0.5 text-center text-[7px] text-slate-500 border-t border-dashed border-slate-300">
                       <p className="font-semibold text-slate-700">
                         {shopSettings.receiptFooterMessage || 'ขอขอบพระคุณที่ให้ความไว้วางใจเลือกใช้บริการ'}
                       </p>
-                      <p className="text-[7px] text-slate-400">
+                      <p className="text-[6.5px] text-slate-400">
                         เอกสารนี้ออกโดยระบบเพื่อใช้ประกอบการเบิกจ่ายตามระเบียบพัสดุราชการ (A5 Portrait Format)
                       </p>
+                    </div>
+
+                    {/* Perforated Cutting Line */}
+                    <div className="relative my-1 text-center border-t-2 border-dashed border-slate-400">
+                      <span className="absolute left-1/2 -top-2 -translate-x-1/2 bg-white px-2 text-[7px] font-bold text-slate-600 flex items-center gap-1 shadow-2xs">
+                        <Scissors className="w-2.5 h-2.5 text-slate-700 inline" />
+                        <span>ตัดตามรอยประ (หางบัตรสรุปยอดวางบิลสำหรับหน่วยงาน / ทะเบียนคุมฎีกา)</span>
+                      </span>
+                    </div>
+
+                    {/* Government Claim Stub Box */}
+                    <div className="border border-slate-400 rounded-xs p-1 bg-slate-50/80 text-[7px] leading-tight space-y-0.5">
+                      <div className="flex justify-between items-center border-b border-slate-300 pb-0.5">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-black text-[8px] text-slate-900">{shopSettings.shopName}</span>
+                          <span className="text-[6.5px] text-slate-600">โทร. {shopSettings.shopPhone}</span>
+                        </div>
+                        <span className="px-1.5 py-0.2 rounded bg-purple-100 text-purple-900 font-bold text-[6.5px]">
+                          หางบัตรสรุปยอดวางบิลรวม (Statement Stub)
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-12 gap-1 items-center">
+                        <div className="col-span-7 space-y-0.2">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-slate-900">
+                              เลขที่: <span className="font-mono">{activeStatementDocNo}</span>
+                            </span>
+                            <Barcode value={activeStatementDocNo} width={0.85} height={14} displayValue={false} className="h-3.5 inline" />
+                          </div>
+                          <p className="truncate">
+                            <span className="font-semibold text-slate-700">หน่วยงาน:</span> <span className="font-bold">{selectedGroup.agencyName}</span>
+                          </p>
+                          <p className="truncate text-slate-600">
+                            <span className="font-semibold text-slate-700">จำนวน:</span> {activeStatementBills.length} บิลรายการ (เครดิตเทอม {selectedGroup.bills[0]?.creditDays || 30} วัน)
+                          </p>
+                        </div>
+
+                        <div className="col-span-5 flex items-center justify-between pl-1 border-l border-slate-300">
+                          <div className="space-y-0.2">
+                            <p className="font-bold text-slate-900">
+                              ยอดสุทธิ: <span className="text-purple-900 font-mono font-bold text-[8px]">฿{statementGrandTotal.toLocaleString()}</span>
+                            </p>
+                            <p className="text-slate-600">
+                              สถานะ: <span className="font-bold text-blue-900">{docType === 'quotation' ? 'เสนอราคา' : docType === 'receipt' ? 'รับชำระแล้ว' : 'วางบิลแล้ว'}</span>
+                            </p>
+                            <p className="text-[6px] text-slate-500">วันที่: {todayThaiDate}</p>
+                          </div>
+
+                          {promptPayQrUrl && (
+                            <div className="flex flex-col items-center shrink-0 ml-1">
+                              <img src={promptPayQrUrl} alt="PromptPay QR" className="w-7 h-7 p-0.5 bg-white border border-slate-300 rounded-xs" />
+                              <span className="text-[5.5px] text-slate-500">พร้อมเพย์</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex justify-between items-center text-[6px] text-slate-500 pt-0.5 border-t border-slate-200">
+                        <span>* ส่วนหางบัตรสำหรับงานพัสดุและการเงินใช้แนบฎีกาเบิกจ่ายเงินงบประมาณ</span>
+                        <span>{shopSettings.shopName}</span>
+                      </div>
                     </div>
                   </div>
                 </div>
