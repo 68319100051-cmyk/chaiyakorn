@@ -427,13 +427,13 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
                       )}
                     </div>
 
-                    {/* Right: Bank Details & QR Codes: 2x2 cm Tracking QR & 3x3 cm PromptPay QR (5 cols) */}
-                    <div className="col-span-5 p-1 flex items-center justify-between gap-1 bg-slate-50/60">
-                      <div className="space-y-0.2 text-[7px] leading-tight">
+                    {/* Right: Bank Details & PromptPay QR 3x3 cm (5 cols) */}
+                    <div className="col-span-5 p-1 flex items-center justify-between gap-1.5 bg-slate-50/60">
+                      <div className="space-y-0.5 text-[7px] leading-tight">
                         <p className="font-bold text-slate-900">
                           บัญชีธนาคาร <span className="font-normal">{shopSettings.bankName || 'กสิกรไทย'}</span>
                         </p>
-                        <p className="font-bold text-slate-900 truncate max-w-[85px]">
+                        <p className="font-bold text-slate-900">
                           ชื่อบัญชี <span className="font-normal">{shopSettings.bankAccountName || shopSettings.shopName}</span>
                         </p>
                         {shopSettings.bankAccountNumber && (
@@ -455,36 +455,19 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
                         </div>
                       </div>
 
-                      {/* QR Codes Group: Tracking QR 2x2 cm + PromptPay QR 3x3 cm */}
-                      <div className="shrink-0 flex items-end gap-1.5">
-                        {/* Live Status Tracking QR: EXACTLY 2x2 cm (20mm x 20mm) */}
-                        {qrCodeDataUrl && (
-                          <div className="flex flex-col items-center">
-                            <div className="w-[20mm] h-[20mm] p-0.5 bg-white border border-slate-300 rounded-xs shadow-2xs flex items-center justify-center">
-                              <img
-                                src={qrCodeDataUrl}
-                                alt="Live Tracking QR 2x2"
-                                className="w-full h-full object-contain"
-                              />
-                            </div>
-                            <span className="text-[6px] text-blue-900 font-bold mt-0.2">เช็คสถานะสด (2×2 ซม.)</span>
+                      {/* PromptPay QR Code: EXACTLY 3x3 cm (30mm x 30mm) */}
+                      {promptPayQrUrl && (
+                        <div className="shrink-0 flex flex-col items-center">
+                          <div className="w-[30mm] h-[30mm] p-0.5 bg-white border border-slate-300 rounded-xs shadow-2xs flex items-center justify-center">
+                            <img
+                              src={promptPayQrUrl}
+                              alt="PromptPay QR Code 3x3"
+                              className="w-full h-full object-contain"
+                            />
                           </div>
-                        )}
-
-                        {/* PromptPay QR Code: EXACTLY 3x3 cm (30mm x 30mm) */}
-                        {promptPayQrUrl && (
-                          <div className="flex flex-col items-center">
-                            <div className="w-[30mm] h-[30mm] p-0.5 bg-white border border-slate-300 rounded-xs shadow-2xs flex items-center justify-center">
-                              <img
-                                src={promptPayQrUrl}
-                                alt="PromptPay QR Code 3x3"
-                                className="w-full h-full object-contain"
-                              />
-                            </div>
-                            <span className="text-[6px] text-emerald-900 font-bold mt-0.2">พร้อมเพย์ (3×3 ซม.)</span>
-                          </div>
-                        )}
-                      </div>
+                          <span className="text-[6px] text-slate-500 font-medium mt-0.2">ขนาด 3×3 ซม.</span>
+                        </div>
+                      )}
                     </div>
                   </div>
 
