@@ -43,6 +43,23 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Shared Shop Header: NO top border line above logo/shop name/doc number, keep bottom divider intact */
+.a5-doc-header {
+  border-top: none !important;
+  border-left: none !important;
+  border-right: none !important;
+  border-bottom: 2px solid #1e293b;
+  padding-bottom: 0.5rem;
+}
+
+.slip-doc-header {
+  border-top: none !important;
+}
+
+.a5-portrait-paper > div:first-child {
+  border-top: none !important;
+}
+
 /* Shared Document Banner: NO top border line, keep clean bottom border only */
 .a5-doc-banner {
   border-top: none !important;
@@ -124,6 +141,8 @@
   .print-modal-overlay {
     position: static !important;
     background: transparent !important;
+    border: none !important;
+    border-top: none !important;
     padding: 0 !important;
     margin: 0 !important;
     display: block !important;
@@ -136,6 +155,7 @@
 
   .print-modal-card {
     border: none !important;
+    border-top: none !important;
     box-shadow: none !important;
     max-width: 136mm !important;
     width: 136mm !important;
@@ -149,7 +169,7 @@
 
   /* Single-page default: fills 136mm x 199mm so signatures push neatly to the bottom */
   #printable-receipt-a5,
-  #pos-receipt-print-area,
+  #pos-receipt-print-area.a5-portrait-paper,
   #gov-consolidated-statement,
   .a5-printable-page,
   .a5-portrait-paper {
@@ -158,6 +178,7 @@
     justify-content: space-between !important;
     box-shadow: none !important;
     border: none !important;
+    border-top: none !important;
     border-radius: 0 !important;
     width: 136mm !important;
     max-width: 136mm !important;
@@ -183,11 +204,15 @@
     page-break-inside: avoid !important;
   }
 
-  #printable-receipt-slip {
+  #printable-receipt-slip,
+  #pos-receipt-print-area:not(.a5-portrait-paper) {
     display: block !important;
     box-shadow: none !important;
     border: none !important;
+    border-top: none !important;
+    border-radius: 0 !important;
     width: 80mm !important;
+    max-width: 80mm !important;
     margin: 0 auto !important;
     padding: 0 !important;
   }

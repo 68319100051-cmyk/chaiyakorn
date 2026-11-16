@@ -646,7 +646,7 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
         </div>
 
         {/* Modal Main Workspace */}
-        <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
+        <div className="flex-1 flex flex-col md:flex-row overflow-hidden print:overflow-visible print:bg-white">
           
           {/* ================= LEFT SIDEBAR: LIST OF AGENCIES GROUPED BY TAX ID ================= */}
           <div className="w-full md:w-80 lg:w-96 border-r border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/60 flex flex-col print:hidden">
@@ -744,7 +744,7 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
           </div>
 
           {/* ================= RIGHT WORKSPACE: CONSOLIDATED STATEMENT PREVIEW & CONTROLS ================= */}
-          <div className="flex-1 flex flex-col bg-slate-100 dark:bg-slate-950/60 overflow-hidden">
+          <div className="flex-1 flex flex-col bg-slate-100 dark:bg-slate-950/60 overflow-hidden print:overflow-visible print:bg-white">
             {selectedGroup ? (
               <>
                 {/* Control Bar: Document Type, Selection & Action Buttons (Hidden in Print) */}
@@ -847,8 +847,8 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
                   >
                     {/* TOP + MIDDLE: Header, Gov Info & Bills Table */}
                     <div className="space-y-2">
-                      {/* Header: Shop Information (NO TOP BARCODE) */}
-                      <div className="flex justify-between items-start gap-2.5 border-b-2 border-slate-800 pb-2">
+                      {/* Header: Shop Information (NO TOP BARCODE, NO TOP LINE) */}
+                      <div className="a5-doc-header flex justify-between items-start gap-2.5">
                         <div className="flex items-start gap-2.5 min-w-0 flex-1">
                           {shopSettings.logoUrl && (
                             <img

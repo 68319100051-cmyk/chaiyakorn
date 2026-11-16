@@ -226,8 +226,8 @@ export const POSReceiptModal: React.FC<POSReceiptModalProps> = ({
                   >
                     {/* ================= MAIN CONTENT ================= */}
                     <div className="space-y-2">
-                      {/* 1. Header: Logo, Shop Info | Doc Number & Thai Date (NO TOP BARCODE) */}
-                      <div className="flex justify-between items-start gap-2.5 border-b-2 border-slate-800 pb-2">
+                      {/* 1. Header: Logo, Shop Info | Doc Number & Thai Date (NO TOP BARCODE, NO TOP LINE) */}
+                      <div className="a5-doc-header flex justify-between items-start gap-2.5">
                         <div className="flex items-start gap-2.5 min-w-0 flex-1">
                           {shopSettings.logoUrl && (
                             <img
@@ -493,7 +493,7 @@ export const POSReceiptModal: React.FC<POSReceiptModalProps> = ({
               id="pos-receipt-print-area"
               className="bg-white text-slate-950 shadow-xl border border-slate-200 print:shadow-none print:border-none print:m-0 print:p-0 w-full max-w-[350px] p-4 rounded-xl text-[9pt] leading-[1.55]"
             >
-              <div className="text-center space-y-1 border-b border-dashed border-slate-400 pb-2">
+              <div className="slip-doc-header text-center space-y-1 border-b border-dashed border-slate-400 pb-2">
                 {shopSettings.logoUrl && (
                   <img
                     src={shopSettings.logoUrl}

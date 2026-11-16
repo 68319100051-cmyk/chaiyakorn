@@ -406,8 +406,8 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
               >
                 {/* ================= TOP + MIDDLE CONTENT ================= */}
                 <div className="space-y-2">
-                  {/* 1. HEADER: Shop Info Left | Doc Number & Thai Date Right (NO TOP BARCODE) */}
-                  <div className="flex justify-between items-start gap-2.5 border-b-2 border-slate-800 pb-2">
+                  {/* 1. HEADER: Shop Info Left | Doc Number & Thai Date Right (NO TOP BARCODE, NO TOP LINE) */}
+                  <div className="a5-doc-header flex justify-between items-start gap-2.5">
                     <div className="flex items-start gap-2.5 min-w-0 flex-1">
                       {shopSettings.logoUrl && (
                         <img
@@ -769,7 +769,7 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
               id="printable-receipt-slip"
               className="bg-white text-slate-950 w-[80mm] p-3 rounded-xl shadow-lg border border-slate-200 text-[9pt] leading-[1.55] print:shadow-none print:border-none print:w-full print:p-1"
             >
-              <div className="text-center pb-2 border-b border-dashed border-slate-500">
+              <div className="slip-doc-header text-center pb-2 border-b border-dashed border-slate-500">
                 {shopSettings.logoUrl && (
                   <img
                     src={shopSettings.logoUrl}
