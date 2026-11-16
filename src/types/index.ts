@@ -18,6 +18,24 @@ export interface UsedPart {
   totalPrice: number;
 }
 
+export interface RepairDeviceItem {
+  id: string;
+  deviceType: DeviceType;
+  brand: string;
+  model: string;
+  serialNumber?: string;
+  color?: string;
+  accessories: string[];
+  problemDescription: string;
+  initialConditionNotes?: string;
+  technicianNotes?: string;
+  status?: RepairStatus;
+  estimatedCost?: number;
+  laborCost: number;
+  partsCost: number;
+  partsUsed: UsedPart[];
+}
+
 export interface RepairTicket {
   id: string;
   ticketNumber: string;               // เช่น REP-20261026-001
@@ -35,6 +53,7 @@ export interface RepairTicket {
   initialConditionNotes?: string;     // สภาพตัวเครื่องเบื้องต้น รอยตำหนิ
   technicianNotes?: string;           // บันทึกการตรวจเช็คและการซ่อมของช่าง
   technicianName?: string;            // ช่างผู้รับผิดชอบ
+  devices?: RepairDeviceItem[];       // รองรับหลายเครื่องใน 1 ใบรับซ่อม (1 Ticket : N Devices)
   status: RepairStatus;
   estimatedCost: number;              // ราคาประเมิน
   laborCost: number;                  // ค่าแรง/ค่าบริการ
@@ -104,6 +123,7 @@ export interface POSCartItem {
 export type GovBillingStatus = 'pending_billing' | 'billed' | 'paid';
 
 export type GovDocumentType = 'quotation' | 'invoice' | 'receipt' | 'work_order';
+export type RepairDocumentType = GovDocumentType | 'delivery_note';
 
 export interface GovCreditInfo {
   agencyName: string;            // ชื่อหน่วยงานราชการ / โรงเรียน / อบต. / เทศบาล

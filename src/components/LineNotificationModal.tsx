@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { RepairTicket, ShopSettings, STATUS_CONFIG } from '../types';
+import { formatDevicesSummary } from '../utils/ticketDevices';
+import { formatThaiDateFull } from '../utils/printHelpers';
 import {
   X,
   MessageSquare,
@@ -34,6 +36,7 @@ export const LineNotificationModal: React.FC<LineNotificationModalProps> = ({
   const [notifySuccess, setNotifySuccess] = useState(false);
 
   const trackingUrl = `${window.location.origin}/?track=${encodeURIComponent(ticket.ticketNumber)}`;
+  const deviceSummary = formatDevicesSummary(ticket);
 
   // Generate templates
   const getMessageContent = () => {
@@ -45,7 +48,7 @@ export const LineNotificationModal: React.FC<LineNotificationModalProps> = ({
       return `🔔 [แจ้งเตือนเครื่องซ่อมเสร็จสิ้น - ${shopSettings.shopName}]
 เรียน คุณ${ticket.customerName}
 
-อุปกรณ์: ${ticket.brand} ${ticket.model}
+อุปกรณ์: ${deviceSummary}
 เลขที่ใบรับซ่อม: ${ticket.ticketNumber}
 สถานะ: ซ่อมเสร็จเรียบร้อยและผ่านการทดสอบแล้ว ✅
 
@@ -67,7 +70,7 @@ ${trackingUrl}
       return `📝 [แจ้งรับเครื่องเข้าซ่อม - ${shopSettings.shopName}]
 เรียน คุณ${ticket.customerName}
 
-ทางร้านได้รับเครื่อง ${ticket.brand} ${ticket.model} เข้าสู่ระบบเรียบร้อยแล้วครับ
+ทางร้านได้รับเครื่อง ${deviceSummary} เข้าสู่ระบบเรียบร้อยแล้วครับ
 เลขที่ใบรับซ่อม: ${ticket.ticketNumber}
 อาการเสียเบื้องต้น: ${ticket.problemDescription}
 
@@ -83,12 +86,12 @@ ${trackingUrl}
     return `🔍 [แจ้งราคาประเมินและสถานะงานซ่อม - ${shopSettings.shopName}]
 เรียน คุณ${ticket.customerName}
 
-สำหรับเครื่อง ${ticket.brand} ${ticket.model} (เลขที่: ${ticket.ticketNumber})
+สำหรับเครื่อง ${deviceSummary} (เลขที่: ${ticket.ticketNumber})
 ช่างได้ทำการตรวจเช็คอาการพบว่า:
 ${ticket.technicianNotes || ticket.problemDescription}
 
 ราคาประเมินค่าบริการและอะไหล่: ${ticket.totalAmount.toLocaleString()} บาท
-กำหนดแล้วเสร็จโดยประมาณ: ${ticket.estimatedCompletionDate || '1-2 วันทำการ'}
+กำหนดแล้วเสร็จโดยประมาณ: ${ticket.estimatedCompletionDate ? formatThaiDateFull(ticket.estimatedCompletionDate) : '1-2 วันทำการ'}
 
 📲 เช็ครายละเอียดสถานะงานซ่อม:
 ${trackingUrl}

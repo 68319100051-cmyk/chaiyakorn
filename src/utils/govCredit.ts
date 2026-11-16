@@ -1,4 +1,5 @@
 import { GovCreditInfo, GovBillingStatus } from '../types';
+import { formatThaiDateFull } from './printHelpers';
 
 export const CREDIT_DAYS_PRESETS = [
   { days: 15, label: '15 วัน (เร่งด่วน)' },
@@ -43,7 +44,7 @@ export function getGovCreditDueStatus(
       badgeLabel: 'ชำระแล้ว / เงินโอนเข้า',
       badgeClass: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800',
       isOverdue: false,
-      dueDateFormatted: dueDateStr ? new Date(dueDateStr).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' }) : '-'
+      dueDateFormatted: dueDateStr ? formatThaiDateFull(dueDateStr) : '-'
     };
   }
 
@@ -77,11 +78,7 @@ export function getGovCreditDueStatus(
   const diffMs = due.getTime() - ref.getTime();
   const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
 
-  const dueDateFormatted = due.toLocaleDateString('th-TH', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric'
-  });
+  const dueDateFormatted = formatThaiDateFull(dueDateStr);
 
   if (diffDays < 0) {
     const overdueDays = Math.abs(diffDays);

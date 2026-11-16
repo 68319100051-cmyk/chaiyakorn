@@ -1,13 +1,21 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   RepairTicket,
+  RepairDeviceItem,
   InventoryItem,
   DeviceType,
   RepairStatus,
   UsedPart,
   GovCreditInfo,
-  POSSaleRecord
+  POSSaleRecord,
+  RepairDocumentType
 } from '../types';
+import {
+  createEmptyDeviceItem,
+  getTicketDevices,
+  flattenUsedPartsForStock,
+  buildSyncedDevicePayload
+} from '../utils/ticketDevices';
 import {
   buildCustomerProfiles,
   searchReturningCustomers,
@@ -47,7 +55,9 @@ import {
   ChevronRight,
   Shield,
   ShieldCheck,
-  ShieldAlert
+  ShieldAlert,
+  Printer as PrintIcon,
+  PackageCheck
 } from 'lucide-react';
 
 interface TicketFormModalProps {
@@ -59,6 +69,7 @@ interface TicketFormModalProps {
   allTickets: RepairTicket[];
   posSales?: POSSaleRecord[];
   generateNextTicketNumber: () => string;
+  onPrintTicket?: (ticket: RepairTicket, docType?: RepairDocumentType) => void;
 }
 
 const COMMON_ACCESSORIES = [
@@ -102,7 +113,8 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
   inventory,
   allTickets,
   posSales = [],
-  generateNextTicketNumber
+  generateNextTicketNumber,
+  onPrintTicket
 }) => {
   if (!isOpen) return null;
 
@@ -112,20 +124,16 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerLineId, setCustomerLineId] = useState('');
   const [customerAddress, setCustomerAddress] = useState('');
-  const [deviceType, setDeviceType] = useState<DeviceType>('printer');
-  const [brand, setBrand] = useState('Epson');
-  const [model, setModel] = useState('');
-  const [serialNumber, setSerialNumber] = useState('');
-  const [color, setColor] = useState('');
-  const [accessories, setAccessories] = useState<string[]>([]);
+
+  // Multi-Device State (1 Ticket : N Devices)
+  const [devices, setDevices] = useState<RepairDeviceItem[]>(() => [createEmptyDeviceItem()]);
+  const [activeDeviceIndex, setActiveDeviceIndex] = useState<number>(0);
+  const [laborInputById, setLaborInputById] = useState<Record<string, string>>({});
+
   const [customAccessory, setCustomAccessory] = useState('');
-  const [problemDescription, setProblemDescription] = useState('');
-  const [initialConditionNotes, setInitialConditionNotes] = useState('');
-  const [technicianNotes, setTechnicianNotes] = useState('');
-  const [technicianName, setTechnicianName] = useState('ช่างเอก');
+  const [technicianName, setTechnicianName] = useState('ร้านพัทลุงปริ้นเตอร์');
   const [status, setStatus] = useState<RepairStatus>('pending');
   const [estimatedCost, setEstimatedCost] = useState<number>(0);
-  const [laborCostInput, setLaborCostInput] = useState<string>('300');
   const [discountInput, setDiscountInput] = useState<string>('0');
   const [discountMode, setDiscountMode] = useState<'baht' | 'percent'>('baht');
   const [discountPercentInput, setDiscountPercentInput] = useState<string>('10');
@@ -150,10 +158,74 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
   const [dismissWarrantyAlert, setDismissWarrantyAlert] = useState<boolean>(false);
 
   // Parts Used State
-  const [partsUsed, setPartsUsed] = useState<UsedPart[]>([]);
   const [initialPartsUsed, setInitialPartsUsed] = useState<UsedPart[]>([]);
   const [selectedInventoryId, setSelectedInventoryId] = useState<string>('');
   const [partQuantity, setPartQuantity] = useState<number>(1);
+
+  // Active device accessors & updaters
+  const safeActiveIndex = Math.min(activeDeviceIndex, Math.max(0, devices.length - 1));
+  const activeDevice = devices[safeActiveIndex] || devices[0] || createEmptyDeviceItem();
+  const deviceType = activeDevice.deviceType;
+  const brand = activeDevice.brand;
+  const model = activeDevice.model;
+  const serialNumber = activeDevice.serialNumber || '';
+  const color = activeDevice.color || '';
+  const accessories = activeDevice.accessories || [];
+  const problemDescription = activeDevice.problemDescription;
+  const initialConditionNotes = activeDevice.initialConditionNotes || '';
+  const technicianNotes = activeDevice.technicianNotes || '';
+  const partsUsed = activeDevice.partsUsed || [];
+  const laborCostInput = laborInputById[activeDevice.id] ?? String(activeDevice.laborCost ?? 300);
+
+  const updateActiveDevice = (patch: Partial<RepairDeviceItem>) => {
+    setDevices(prev =>
+      prev.map((d, idx) => (idx === safeActiveIndex ? { ...d, ...patch } : d))
+    );
+  };
+
+  const setDeviceType = (val: DeviceType) => updateActiveDevice({ deviceType: val });
+  const setBrand = (val: string) => updateActiveDevice({ brand: val });
+  const setModel = (val: string) => updateActiveDevice({ model: val });
+  const setSerialNumber = (val: string) => updateActiveDevice({ serialNumber: val });
+  const setColor = (val: string) => updateActiveDevice({ color: val });
+  const setAccessories = (val: string[]) => updateActiveDevice({ accessories: val });
+  const setProblemDescription = (val: string) => updateActiveDevice({ problemDescription: val });
+  const setInitialConditionNotes = (val: string) => updateActiveDevice({ initialConditionNotes: val });
+  const setTechnicianNotes = (val: string) => updateActiveDevice({ technicianNotes: val });
+  const setPartsUsed = (val: UsedPart[]) =>
+    updateActiveDevice({
+      partsUsed: val,
+      partsCost: val.reduce((sum, p) => sum + (Number(p.totalPrice) || 0), 0)
+    });
+  const setLaborCostInput = (val: string) => {
+    const numeric = Math.max(0, parseFloat(val) || 0);
+    setLaborInputById(prev => ({ ...prev, [activeDevice.id]: val }));
+    updateActiveDevice({ laborCost: numeric });
+  };
+
+  const handleAddDevice = () => {
+    const newDev = createEmptyDeviceItem({
+      deviceType: activeDevice.deviceType,
+      brand: activeDevice.deviceType === 'printer' ? 'Epson' : activeDevice.brand,
+      laborCost: 300
+    });
+    const nextIdx = devices.length;
+    setDevices(prev => [...prev, newDev]);
+    setLaborInputById(prev => ({ ...prev, [newDev.id]: '300' }));
+    setActiveDeviceIndex(nextIdx);
+    setToastMessage(`เพิ่มเครื่องที่ ${nextIdx + 1} ในใบรับซ่อมเดียวกันเรียบร้อยแล้ว`);
+    setTimeout(() => setToastMessage(null), 2500);
+  };
+
+  const handleRemoveDevice = (indexToRemove: number) => {
+    if (devices.length <= 1) return;
+    setDevices(prev => prev.filter((_, idx) => idx !== indexToRemove));
+    setActiveDeviceIndex(prevIdx => {
+      if (prevIdx > indexToRemove) return prevIdx - 1;
+      if (prevIdx >= devices.length - 1) return Math.max(0, devices.length - 2);
+      return prevIdx;
+    });
+  };
 
   // Returning Customer Auto-Lookup & Suggestion State
   const [activeLookupQuery, setActiveLookupQuery] = useState('');
@@ -438,32 +510,30 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
   useEffect(() => {
     setIsSubmitting(false);
     if (ticketToEdit) {
+      const loadedDevices = getTicketDevices(ticketToEdit);
+      setDevices(loadedDevices);
+      setActiveDeviceIndex(0);
+      const inputMap: Record<string, string> = {};
+      loadedDevices.forEach(d => {
+        inputMap[d.id] = String(d.laborCost ?? 300);
+      });
+      setLaborInputById(inputMap);
+
       setTicketNumber(ticketToEdit.ticketNumber);
       setCustomerName(ticketToEdit.customerName);
       setCustomerPhone(ticketToEdit.customerPhone);
       setCustomerLineId(ticketToEdit.customerLineId || '');
       setCustomerAddress(ticketToEdit.customerAddress || '');
-      setDeviceType(ticketToEdit.deviceType);
-      setBrand(ticketToEdit.brand);
-      setModel(ticketToEdit.model);
-      setSerialNumber(ticketToEdit.serialNumber || '');
-      setColor(ticketToEdit.color || '');
-      setAccessories(ticketToEdit.accessories || []);
-      setProblemDescription(ticketToEdit.problemDescription);
-      setInitialConditionNotes(ticketToEdit.initialConditionNotes || '');
-      setTechnicianNotes(ticketToEdit.technicianNotes || '');
-      setTechnicianName(ticketToEdit.technicianName || 'ช่างเอก');
+      setTechnicianName(ticketToEdit.technicianName || 'ร้านพัทลุงปริ้นเตอร์');
       setStatus(ticketToEdit.status);
       setEstimatedCost(ticketToEdit.estimatedCost || 0);
-      setLaborCostInput(String(ticketToEdit.laborCost ?? 300));
       setDiscountInput(String(ticketToEdit.discount ?? 0));
       setDiscountMode('baht');
       setIsPaid(ticketToEdit.isPaid || false);
       setPaymentMethod(ticketToEdit.paymentMethod || 'unpaid');
       setReceivedDate(ticketToEdit.receivedDate || new Date().toISOString().split('T')[0]);
       setEstimatedCompletionDate(ticketToEdit.estimatedCompletionDate || '');
-      setPartsUsed(ticketToEdit.partsUsed || []);
-      setInitialPartsUsed(ticketToEdit.partsUsed || []);
+      setInitialPartsUsed(flattenUsedPartsForStock(loadedDevices));
 
       // Warranty & Claim
       setWarrantyDays(ticketToEdit.warrantyDays !== undefined ? ticketToEdit.warrantyDays : 30);
@@ -480,24 +550,19 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
       setGovCreditDays(ticketToEdit.govCreditInfo?.creditDays || 30);
     } else {
       // New Ticket defaults
+      const firstDev = createEmptyDeviceItem();
+      setDevices([firstDev]);
+      setActiveDeviceIndex(0);
+      setLaborInputById({ [firstDev.id]: '300' });
+
       setTicketNumber(generateNextTicketNumber());
       setCustomerName('');
       setCustomerPhone('');
       setCustomerLineId('');
       setCustomerAddress('');
-      setDeviceType('printer');
-      setBrand('Epson');
-      setModel('');
-      setSerialNumber('');
-      setColor('');
-      setAccessories(['สายไฟ AC Power']);
-      setProblemDescription('');
-      setInitialConditionNotes('สภาพปกติ ไม่มีรอยแตกร้าวรุนแรง');
-      setTechnicianNotes('');
-      setTechnicianName('ช่างเอก');
+      setTechnicianName('ร้านพัทลุงปริ้นเตอร์');
       setStatus('pending');
       setEstimatedCost(500);
-      setLaborCostInput('300');
       setDiscountInput('0');
       setDiscountMode('baht');
       setIsPaid(false);
@@ -507,7 +572,6 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 2);
       setEstimatedCompletionDate(tomorrow.toISOString().split('T')[0]);
-      setPartsUsed([]);
       setInitialPartsUsed([]);
 
       // Reset Warranty
@@ -526,9 +590,14 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
     }
   }, [ticketToEdit, isOpen]);
 
-  // Financial calculations
-  const laborCost = Math.max(0, parseFloat(laborCostInput) || 0);
-  const partsCost = partsUsed.reduce((sum, p) => sum + p.totalPrice, 0);
+  // Financial calculations (Aggregated across all devices in the ticket)
+  const activeDeviceLaborCost = Math.max(0, parseFloat(laborCostInput) || 0);
+  const activeDevicePartsCost = partsUsed.reduce((sum, p) => sum + p.totalPrice, 0);
+  const laborCost = devices.reduce((sum, d) => sum + (Number(d.laborCost) || 0), 0);
+  const partsCost = devices.reduce(
+    (sum, d) => sum + (d.partsUsed || []).reduce((s, p) => s + (Number(p.totalPrice) || 0), 0),
+    0
+  );
   const subtotalBeforeDiscount = laborCost + partsCost;
 
   let calculatedDiscount = 0;
@@ -608,8 +677,6 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
       alert('กรุณากรอกเบอร์โทรศัพท์ลูกค้า');
       return;
     }
-    const safeModel = model.trim() || 'ไม่ระบุรุ่น';
-    const safeProblem = problemDescription.trim() || 'ตรวจเช็คอาการทั่วไป';
 
     const now = new Date().toISOString();
     const finalTicketNumber = ticketNumber.trim() || generateNextTicketNumber();
@@ -630,6 +697,8 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
       };
     }
 
+    const syncedDeviceFields = buildSyncedDevicePayload(devices, status);
+
     const ticketData: RepairTicket = {
       id: ticketToEdit ? ticketToEdit.id : `ticket-${Date.now()}`,
       ticketNumber: finalTicketNumber,
@@ -637,26 +706,15 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
       customerPhone: customerPhone.trim(),
       customerLineId: customerLineId.trim() || '',
       customerAddress: customerAddress.trim() || '',
-      deviceType,
-      brand: brand || 'อื่นๆ',
-      model: safeModel,
-      serialNumber: serialNumber.trim() || '',
-      color: color.trim() || '',
-      accessories: accessories || [],
-      problemDescription: safeProblem,
-      initialConditionNotes: initialConditionNotes.trim() || '',
-      technicianNotes: technicianNotes.trim() || '',
-      technicianName: technicianName || 'ช่างเอก',
+      ...syncedDeviceFields,
+      technicianName: technicianName || 'ร้านพัทลุงปริ้นเตอร์',
       status,
       estimatedCost: Number(estimatedCost) || 0,
-      laborCost: Number(laborCost) || 0,
-      partsCost: Number(partsCost) || 0,
       discount: Number(discount) || 0,
       totalAmount: Math.max(0, Number(totalAmount) || 0),
       isPaid: Boolean(isPaid),
       paymentMethod: paymentMethod || 'unpaid',
       govCreditInfo,
-      partsUsed: partsUsed || [],
       trackingToken: (ticketToEdit?.trackingToken) || finalTicketNumber,
       lineNotified: Boolean(ticketToEdit?.lineNotified),
       lastLineNotifiedAt: ticketToEdit?.lastLineNotifiedAt || '',
@@ -1300,12 +1358,66 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
             </div>
           </div>
 
-          {/* 2. Device Details */}
+          {/* 2. Device Details (Supports 1 Ticket : N Devices) */}
           <div className="space-y-3">
-            <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2 border-b border-slate-100 dark:border-slate-700 pb-2">
-              <Laptop className="w-4 h-4 text-purple-500" />
-              <span>2. ข้อมูลอุปกรณ์ที่นำมาซ่อม</span>
-            </h3>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-700 pb-2">
+              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                <Laptop className="w-4 h-4 text-purple-500" />
+                <span>2. ข้อมูลอุปกรณ์ที่นำมาซ่อม</span>
+                {devices.length > 1 && (
+                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 font-bold">
+                    ทั้งหมด {devices.length} เครื่อง
+                  </span>
+                )}
+              </h3>
+              <button
+                type="button"
+                onClick={handleAddDevice}
+                className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold shadow-xs transition-colors cursor-pointer self-start sm:self-auto"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>+ เพิ่มเครื่อง</span>
+              </button>
+            </div>
+
+            {/* Device Switcher Tabs */}
+            <div className="flex items-center gap-1.5 flex-wrap bg-slate-50 dark:bg-slate-900/60 p-2 rounded-xl border border-slate-200 dark:border-slate-700">
+              {devices.map((dev, idx) => {
+                const isActive = idx === safeActiveIndex;
+                return (
+                  <div key={dev.id} className="flex items-center">
+                    <button
+                      type="button"
+                      onClick={() => setActiveDeviceIndex(idx)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        isActive
+                          ? 'bg-purple-600 text-white shadow-sm'
+                          : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:border-purple-400'
+                      } ${devices.length > 1 ? 'rounded-r-none' : ''}`}
+                    >
+                      <Layers className="w-3.5 h-3.5 shrink-0" />
+                      <span className="truncate max-w-[180px]">
+                        เครื่องที่ {idx + 1}: {dev.brand} {dev.model || '(ระบุรุ่น)'}
+                      </span>
+                    </button>
+                    {devices.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveDevice(idx)}
+                        title={`ลบเครื่องที่ ${idx + 1}`}
+                        className={`px-2 py-1.5 rounded-r-lg border-y border-r text-xs transition-colors cursor-pointer ${
+                          isActive
+                            ? 'bg-purple-700 hover:bg-rose-600 text-white border-purple-700'
+                            : 'bg-white dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950/60 text-rose-500 border-slate-200 dark:border-slate-700'
+                        }`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
 
             {/* Device Type Selector */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
@@ -1602,7 +1714,10 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
           <div className="space-y-3">
             <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2 border-b border-slate-100 dark:border-slate-700 pb-2">
               <AlertCircle className="w-4 h-4 text-amber-500" />
-              <span>3. อาการเสียและบันทึกตรวจเช็ค</span>
+              <span>
+                3. อาการเสียและบันทึกตรวจเช็ค
+                {devices.length > 1 ? ` (เครื่องที่ ${safeActiveIndex + 1}: ${brand} ${model || '-'})` : ''}
+              </span>
             </h3>
 
             <div>
@@ -1674,10 +1789,15 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
             <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center justify-between border-b border-slate-100 dark:border-slate-700 pb-2">
               <span className="flex items-center gap-2">
                 <Package className="w-4 h-4 text-emerald-500" />
-                <span>4. รายการอะไหล่ที่เปลี่ยน (ตัดสต็อกอัตโนมัติ)</span>
+                <span>
+                  4. รายการอะไหล่ที่เปลี่ยน
+                  {devices.length > 1 ? ` (เครื่องที่ ${safeActiveIndex + 1})` : ' (ตัดสต็อกอัตโนมัติ)'}
+                </span>
               </span>
               <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-                รวมค่าอะไหล่: ฿{partsCost.toLocaleString()}
+                {devices.length > 1
+                  ? `เครื่องนี้ ฿${activeDevicePartsCost.toLocaleString()} • รวมทุกเครื่อง ฿${partsCost.toLocaleString()}`
+                  : `รวมค่าอะไหล่: ฿${partsCost.toLocaleString()}`}
               </span>
             </h3>
 
@@ -1795,7 +1915,7 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
                 </label>
                 <input
                   type="text"
-                  placeholder="เช่น ช่างเอก, ช่างวิทย์, ช่างบอย"
+                  placeholder="ร้านพัทลุงปริ้นเตอร์"
                   value={technicianName}
                   onChange={e => {
                     setTechnicianName(e.target.value);
@@ -1867,12 +1987,47 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
                 </span>
               </div>
 
+              {/* Multi-Device Cost Breakdown Summary */}
+              {devices.length > 1 && (
+                <div className="bg-white dark:bg-slate-800 rounded-xl p-2.5 border border-purple-200 dark:border-purple-800/60 space-y-1.5">
+                  <div className="text-[11px] font-bold text-purple-800 dark:text-purple-300 flex items-center justify-between">
+                    <span>สรุปค่าใช้จ่ายแยกตามเครื่อง ({devices.length} เครื่อง)</span>
+                    <span className="text-[10px] font-normal text-slate-500">คลิกที่เครื่องเพื่อแก้ไขค่าแรง/อะไหล่</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                    {devices.map((d, idx) => {
+                      const dParts = (d.partsUsed || []).reduce((s, p) => s + (Number(p.totalPrice) || 0), 0);
+                      const dSub = (Number(d.laborCost) || 0) + dParts;
+                      return (
+                        <button
+                          key={d.id}
+                          type="button"
+                          onClick={() => setActiveDeviceIndex(idx)}
+                          className={`text-left px-2.5 py-1.5 rounded-lg border text-[11px] flex items-center justify-between transition-colors cursor-pointer ${
+                            idx === safeActiveIndex
+                              ? 'bg-purple-50 dark:bg-purple-950/60 border-purple-400 text-purple-900 dark:text-purple-100 font-bold'
+                              : 'bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                          }`}
+                        >
+                          <span className="truncate mr-2">
+                            {idx + 1}. {d.brand} {d.model || '-'}
+                          </span>
+                          <span className="font-mono shrink-0">฿{dSub.toLocaleString()}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {/* 3 Main Input Columns */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {/* 1. Labor Cost */}
                 <div>
                   <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    ค่าแรง/บริการตรวจเช็ค (฿)
+                    {devices.length > 1
+                      ? `ค่าแรงเครื่องที่ ${safeActiveIndex + 1} (฿)`
+                      : 'ค่าแรง/บริการตรวจเช็ค (฿)'}
                   </label>
                   <input
                     type="number"
@@ -1920,14 +2075,20 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
                 {/* 2. Parts Total Cost (Auto calculated from selected inventory) */}
                 <div>
                   <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    ค่าอะไหล่รวม ({partsUsed.length} รายการ)
+                    {devices.length > 1
+                      ? `ค่าอะไหล่รวมทุกเครื่อง (${devices.reduce((s, d) => s + (d.partsUsed?.length || 0), 0)} รายการ)`
+                      : `ค่าอะไหล่รวม (${partsUsed.length} รายการ)`}
                   </label>
                   <div className="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-slate-800 dark:text-slate-200 h-[38px] flex items-center justify-between">
                     <span>฿{partsCost.toLocaleString()}</span>
                     <span className="text-[10px] text-slate-400 font-normal">คำนวณจากตาราง</span>
                   </div>
                   <p className="text-[10px] text-slate-400 mt-1">
-                    {partsUsed.length > 0 ? `ใช้อะไหล่จากคลัง ${partsUsed.length} รายการ` : 'ยังไม่มีการเลือกเบิกอะไหล่'}
+                    {devices.length > 1
+                      ? `เครื่องนี้ ฿${activeDevicePartsCost.toLocaleString()} • ค่าแรงรวมทุกเครื่อง ฿${laborCost.toLocaleString()}`
+                      : partsUsed.length > 0
+                      ? `ใช้อะไหล่จากคลัง ${partsUsed.length} รายการ`
+                      : 'ยังไม่มีการเลือกเบิกอะไหล่'}
                   </p>
                 </div>
 
@@ -2427,29 +2588,91 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
           </div>
 
           {/* Modal Actions Footer (Sticky on Mobile) */}
-          <div className="sticky bottom-0 -mx-4 -mb-4 sm:-mx-6 sm:-mb-6 p-3 sm:p-4 bg-white/95 dark:bg-slate-800/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-700 flex items-center justify-end gap-3 z-20">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isSubmitting}
-              className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors disabled:opacity-50"
-            >
-              ยกเลิก
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-bold text-xs shadow-md shadow-blue-500/20 active:scale-95 transition-all cursor-pointer disabled:opacity-50 flex items-center gap-2"
-            >
-              {isSubmitting ? (
-                <>
-                  <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
-                  <span>กำลังบันทึกข้อมูล...</span>
-                </>
-              ) : (
-                <span>บันทึกใบรับซ่อม</span>
+          <div className="sticky bottom-0 -mx-4 -mb-4 sm:-mx-6 sm:-mb-6 p-3 sm:p-4 bg-white/95 dark:bg-slate-800/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-700 flex flex-wrap items-center justify-between gap-2 z-20">
+            <div className="flex items-center gap-2">
+              {ticketToEdit && onPrintTicket && (status === 'repaired' || status === 'ready_pickup' || status === 'completed') && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    onPrintTicket(
+                      {
+                        ...ticketToEdit,
+                        ...buildSyncedDevicePayload(devices, status),
+                        customerName: customerName.trim() || ticketToEdit.customerName,
+                        customerPhone: customerPhone.trim() || ticketToEdit.customerPhone,
+                        customerLineId: customerLineId.trim() || '',
+                        customerAddress: customerAddress.trim() || '',
+                        technicianName: technicianName || 'ร้านพัทลุงปริ้นเตอร์',
+                        status,
+                        discount: Number(discount) || 0,
+                        totalAmount: Math.max(0, Number(totalAmount) || 0),
+                        isPaid: Boolean(isPaid),
+                        paymentMethod,
+                        receivedDate,
+                        warrantyDays: Number(warrantyDays) >= 0 ? Number(warrantyDays) : 30
+                      },
+                      'delivery_note'
+                    )
+                  }
+                  className="px-3.5 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs shadow-sm flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <PackageCheck className="w-4 h-4" />
+                  <span>พิมพ์ใบส่งมอบของ</span>
+                </button>
               )}
-            </button>
+              {ticketToEdit && onPrintTicket && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    onPrintTicket({
+                      ...ticketToEdit,
+                      ...buildSyncedDevicePayload(devices, status),
+                      customerName: customerName.trim() || ticketToEdit.customerName,
+                      customerPhone: customerPhone.trim() || ticketToEdit.customerPhone,
+                      customerLineId: customerLineId.trim() || '',
+                      customerAddress: customerAddress.trim() || '',
+                      technicianName: technicianName || 'ร้านพัทลุงปริ้นเตอร์',
+                      status,
+                      discount: Number(discount) || 0,
+                      totalAmount: Math.max(0, Number(totalAmount) || 0),
+                      isPaid: Boolean(isPaid),
+                      paymentMethod,
+                      receivedDate,
+                      warrantyDays: Number(warrantyDays) >= 0 ? Number(warrantyDays) : 30
+                    })
+                  }
+                  className="px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-700/60 hover:bg-slate-100 text-slate-700 dark:text-slate-200 font-semibold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <PrintIcon className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">พิมพ์เอกสาร</span>
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 ml-auto">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={isSubmitting}
+                className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors disabled:opacity-50"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-bold text-xs shadow-md shadow-blue-500/20 active:scale-95 transition-all cursor-pointer disabled:opacity-50 flex items-center gap-2"
+              >
+                {isSubmitting ? (
+                  <>
+                    <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                    <span>กำลังบันทึกข้อมูล...</span>
+                  </>
+                ) : (
+                  <span>บันทึกใบรับซ่อม</span>
+                )}
+              </button>
+            </div>
           </div>
         </form>
       </div>

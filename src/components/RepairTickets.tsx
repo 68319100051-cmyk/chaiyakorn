@@ -4,33 +4,38 @@ import {
   DeviceType,
   RepairStatus,
   STATUS_CONFIG,
-  DEVICE_LABELS
+  RepairDocumentType
 } from '../types';
 import {
   Search,
   Plus,
-  Filter,
   Printer as PrintIcon,
   MessageSquare,
   Edit3,
   Trash2,
   ExternalLink,
-  ChevronRight,
   Monitor,
   Laptop,
   Printer,
   CheckCircle,
-  Clock,
   Phone,
   Tag,
   Calendar,
   Shield,
   ShieldCheck,
   Building2,
-  Wrench
+  Wrench,
+  LayoutGrid,
+  List,
+  PackageCheck,
+  Layers
 } from 'lucide-react';
 import { calculateTicketWarranty } from '../utils/warranty';
 import { getGovCreditDueStatus } from '../utils/govCredit';
+import { getTicketDevices, formatDevicesSummary } from '../utils/ticketDevices';
+import { formatThaiDateFull } from '../utils/printHelpers';
+
+const VIEW_MODE_STORAGE_KEY = 'fixpro_ticket_view_mode';
 
 interface RepairTicketsProps {
   tickets: RepairTicket[];
@@ -40,7 +45,7 @@ interface RepairTicketsProps {
   onDeleteTicket: (ticketId: string) => void;
   onUpdateStatus: (ticketId: string, status: RepairStatus) => void;
   onUpdateDiscount?: (ticketId: string, newDiscount: number) => void;
-  onPrintTicket: (ticket: RepairTicket) => void;
+  onPrintTicket: (ticket: RepairTicket, docType?: RepairDocumentType) => void;
   onLineNotify: (ticket: RepairTicket) => void;
   onOpenTracking: (ticket: RepairTicket) => void;
 }
@@ -63,7 +68,23 @@ export const RepairTickets: React.FC<RepairTicketsProps> = ({
   const [warrantyFilter, setWarrantyFilter] = useState<'all' | 'under_warranty' | 'claim'>('all');
   const [govCreditFilter, setGovCreditFilter] = useState<boolean>(false);
   const [viewPage, setViewPage] = useState<'active' | 'closed' | 'all'>(initialViewPage);
-  const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
+  const [viewMode, setViewMode] = useState<'cards' | 'table'>(() => {
+    try {
+      const saved = localStorage.getItem(VIEW_MODE_STORAGE_KEY);
+      return saved === 'table' ? 'table' : 'cards';
+    } catch {
+      return 'cards';
+    }
+  });
+
+  const handleChangeViewMode = (mode: 'cards' | 'table') => {
+    setViewMode(mode);
+    try {
+      localStorage.setItem(VIEW_MODE_STORAGE_KEY, mode);
+    } catch {
+      // ignore storage errors
+    }
+  };
 
   useEffect(() => {
     if (initialViewPage) {
@@ -118,23 +139,31 @@ export const RepairTickets: React.FC<RepairTicketsProps> = ({
         return false;
       }
 
-      // 2. Search filter
+      // 2. Search filter (supports multi-device tickets)
+      const devices = getTicketDevices(ticket);
       const term = searchTerm.trim().toLowerCase();
+      const matchDeviceSearch = devices.some(
+        d =>
+          d.brand.toLowerCase().includes(term) ||
+          d.model.toLowerCase().includes(term) ||
+          (d.serialNumber && d.serialNumber.toLowerCase().includes(term)) ||
+          d.problemDescription.toLowerCase().includes(term)
+      );
       const matchSearch =
         !term ||
         ticket.ticketNumber.toLowerCase().includes(term) ||
         ticket.customerName.toLowerCase().includes(term) ||
         ticket.customerPhone.includes(term) ||
-        ticket.brand.toLowerCase().includes(term) ||
-        ticket.model.toLowerCase().includes(term) ||
-        (ticket.serialNumber && ticket.serialNumber.toLowerCase().includes(term)) ||
+        matchDeviceSearch ||
         (ticket.originalTicketNumber && ticket.originalTicketNumber.toLowerCase().includes(term)) ||
         (ticket.govCreditInfo?.agencyName && ticket.govCreditInfo.agencyName.toLowerCase().includes(term)) ||
         (ticket.govCreditInfo?.disbursementNumber && ticket.govCreditInfo.disbursementNumber.toLowerCase().includes(term)) ||
         ticket.problemDescription.toLowerCase().includes(term);
 
-      // 3. Device filter
-      const matchDevice = selectedDevice === 'all' || ticket.deviceType === selectedDevice;
+      // 3. Device filter (matches if any device on ticket has selectedDevice)
+      const matchDevice =
+        selectedDevice === 'all' ||
+        devices.some(d => d.deviceType === selectedDevice);
 
       // 4. Status filter
       const matchStatus = selectedStatus === 'all' || ticket.status === selectedStatus;
@@ -276,13 +305,47 @@ export const RepairTickets: React.FC<RepairTicketsProps> = ({
           </button>
         </div>
 
-        {viewPage === 'closed' && (
-          <div className="flex items-center gap-2 text-xs text-slate-500 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/40 rounded-xl border border-emerald-200 dark:border-emerald-800/60">
-            <span className="font-semibold text-emerald-800 dark:text-emerald-300">
-              ยอดเงินปิดบิลรวม: ฿{totalClosedRevenue.toLocaleString()} บาท
-            </span>
+        <div className="flex flex-wrap items-center gap-2 ml-auto">
+          {viewPage === 'closed' && (
+            <div className="flex items-center gap-2 text-xs text-slate-500 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/40 rounded-xl border border-emerald-200 dark:border-emerald-800/60">
+              <span className="font-semibold text-emerald-800 dark:text-emerald-300">
+                ยอดเงินปิดบิลรวม: ฿{totalClosedRevenue.toLocaleString()} บาท
+              </span>
+            </div>
+          )}
+
+          {/* View Mode Toggle Switch (Cards vs List Table) */}
+          <div
+            className="inline-flex items-center p-1 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold"
+            role="group"
+            aria-label="รูปแบบการแสดงผล"
+          >
+            <button
+              type="button"
+              onClick={() => handleChangeViewMode('cards')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                viewMode === 'cards'
+                  ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-300 shadow-xs'
+                  : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+              }`}
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+              <span>การ์ด</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleChangeViewMode('table')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                viewMode === 'table'
+                  ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-300 shadow-xs'
+                  : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+              }`}
+            >
+              <List className="w-3.5 h-3.5" />
+              <span>รายการ (List)</span>
+            </button>
           </div>
-        )}
+        </div>
       </div>
 
       {/* Filter and Search Bar */}
@@ -481,11 +544,211 @@ export const RepairTickets: React.FC<RepairTicketsProps> = ({
             )}
           </div>
         </div>
+      ) : viewMode === 'table' ? (
+        /* ================= LIST / TABLE VIEW MODE ================= */
+        <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[920px] text-left text-xs">
+              <thead className="bg-slate-50 dark:bg-slate-900/70 text-slate-600 dark:text-slate-300 font-bold border-b border-slate-200 dark:border-slate-700">
+                <tr>
+                  <th className="py-3 px-3.5 whitespace-nowrap">เลขที่</th>
+                  <th className="py-3 px-3 whitespace-nowrap">ชื่อลูกค้า</th>
+                  <th className="py-3 px-3">อุปกรณ์</th>
+                  <th className="py-3 px-3">อาการเสีย</th>
+                  <th className="py-3 px-3 whitespace-nowrap">สถานะ</th>
+                  <th className="py-3 px-3 whitespace-nowrap">วันที่รับ</th>
+                  <th className="py-3 px-3 text-right whitespace-nowrap">ยอดเงิน</th>
+                  <th className="py-3 px-3.5 text-center whitespace-nowrap">จัดการ</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                {filteredTickets.map(ticket => {
+                  const statusInfo = STATUS_CONFIG[ticket.status];
+                  const devices = getTicketDevices(ticket);
+                  const canDeliveryNote =
+                    ticket.status === 'repaired' ||
+                    ticket.status === 'ready_pickup' ||
+                    ticket.status === 'completed';
+
+                  return (
+                    <tr
+                      key={ticket.id}
+                      onClick={() => onEditTicket(ticket)}
+                      className="hover:bg-blue-50/40 dark:hover:bg-slate-700/40 transition-colors cursor-pointer"
+                    >
+                      {/* 1. Ticket Number */}
+                      <td className="py-3 px-3.5 align-top whitespace-nowrap">
+                        <div className="font-mono font-bold text-blue-600 dark:text-blue-400">
+                          {ticket.ticketNumber}
+                        </div>
+                        {ticket.isWarrantyClaim && (
+                          <span className="inline-flex items-center gap-0.5 mt-1 px-1.5 py-0.2 rounded text-[10px] font-bold bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300">
+                            <ShieldCheck className="w-2.5 h-2.5" />
+                            <span>เคลมฟรี</span>
+                          </span>
+                        )}
+                      </td>
+
+                      {/* 2. Customer */}
+                      <td className="py-3 px-3 align-top">
+                        <div className="font-bold text-slate-900 dark:text-white whitespace-nowrap">
+                          {ticket.customerName}
+                        </div>
+                        <div className="text-[11px] text-slate-500 font-mono mt-0.5">
+                          {ticket.customerPhone}
+                        </div>
+                        {ticket.paymentMethod === 'gov_credit' && (
+                          <span className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.2 rounded text-[10px] font-bold bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300">
+                            <Building2 className="w-2.5 h-2.5" />
+                            <span>ราชการ</span>
+                          </span>
+                        )}
+                      </td>
+
+                      {/* 3. Devices (supports N devices) */}
+                      <td className="py-3 px-3 align-top max-w-[230px]">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-semibold text-slate-800 dark:text-slate-100">
+                            {formatDevicesSummary(ticket)}
+                          </span>
+                          {devices.length > 1 && (
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 shrink-0">
+                              <Layers className="w-2.5 h-2.5" />
+                              <span>{devices.length} เครื่อง</span>
+                            </span>
+                          )}
+                        </div>
+                        {devices.length === 1 && devices[0].serialNumber && (
+                          <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                            S/N: {devices[0].serialNumber}
+                          </div>
+                        )}
+                      </td>
+
+                      {/* 4. Problem Description */}
+                      <td className="py-3 px-3 align-top max-w-[230px]">
+                        <p className="text-slate-700 dark:text-slate-300 line-clamp-2">
+                          {ticket.problemDescription}
+                        </p>
+                      </td>
+
+                      {/* 5. Status (Quick Change Dropdown) */}
+                      <td className="py-3 px-3 align-top whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                        <select
+                          value={ticket.status}
+                          onChange={e => onUpdateStatus(ticket.id, e.target.value as RepairStatus)}
+                          className={`text-[11px] font-bold py-1 px-2 rounded-lg border cursor-pointer focus:ring-1 focus:ring-blue-500 ${statusInfo.bg} ${statusInfo.text} ${statusInfo.border}`}
+                        >
+                          <option value="pending">1. รับเครื่องแล้ว</option>
+                          <option value="diagnosing">2. กำลังตรวจเช็ค/ซ่อม</option>
+                          <option value="waiting_parts">3. รออะไหล่</option>
+                          <option value="repaired">4. ซ่อมเสร็จแล้ว</option>
+                          <option value="ready_pickup">5. พร้อมส่งมอบ</option>
+                          <option value="completed">6. ส่งมอบแล้ว</option>
+                          <option value="cancelled">ยกเลิก</option>
+                        </select>
+                      </td>
+
+                      {/* 6. Received Date */}
+                      <td className="py-3 px-3 align-top whitespace-nowrap text-slate-600 dark:text-slate-300">
+                        {formatThaiDateFull(ticket.receivedDate)}
+                      </td>
+
+                      {/* 7. Total Amount */}
+                      <td className="py-3 px-3 align-top text-right whitespace-nowrap">
+                        <div className="font-extrabold text-blue-700 dark:text-blue-400 text-sm">
+                          ฿{(ticket.totalAmount || 0).toLocaleString()}
+                        </div>
+                        <span
+                          className={`inline-block text-[10px] px-1.5 py-0.2 rounded font-semibold mt-0.5 ${
+                            ticket.isPaid
+                              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
+                              : 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300'
+                          }`}
+                        >
+                          {ticket.isPaid ? 'ชำระแล้ว' : 'ยังไม่ชำระ'}
+                        </span>
+                      </td>
+
+                      {/* 8. Action Buttons */}
+                      <td className="py-3 px-3.5 align-top text-center whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            onClick={() => onPrintTicket(ticket)}
+                            title="พิมพ์เอกสาร (A5)"
+                            className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 text-slate-700 dark:text-slate-200 text-[11px] font-semibold inline-flex items-center gap-1 cursor-pointer"
+                          >
+                            <PrintIcon className="w-3.5 h-3.5" />
+                            <span>พิมพ์</span>
+                          </button>
+
+                          {canDeliveryNote && (
+                            <button
+                              onClick={() => onPrintTicket(ticket, 'delivery_note')}
+                              title="พิมพ์ใบส่งมอบของ"
+                              className="px-2 py-1 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-bold inline-flex items-center gap-1 cursor-pointer"
+                            >
+                              <PackageCheck className="w-3.5 h-3.5" />
+                              <span>ใบส่งมอบของ</span>
+                            </button>
+                          )}
+
+                          <button
+                            onClick={() => onLineNotify(ticket)}
+                            title="แจ้ง LINE"
+                            className="p-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 text-emerald-700 dark:text-emerald-300 cursor-pointer"
+                          >
+                            <MessageSquare className="w-3.5 h-3.5" />
+                          </button>
+
+                          <button
+                            onClick={() => onOpenTracking(ticket)}
+                            title="เช็คสถานะออนไลน์"
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-700 cursor-pointer"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </button>
+
+                          <button
+                            onClick={() => onEditTicket(ticket)}
+                            title="แก้ไข"
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              if (confirm(`ต้องการลบใบรับซ่อม ${ticket.ticketNumber} ของคุณ ${ticket.customerName} หรือไม่?`)) {
+                                onDeleteTicket(ticket.id);
+                              }
+                            }}
+                            title="ลบ"
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
       ) : (
+        /* ================= CARD GRID VIEW MODE ================= */
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredTickets.map(ticket => {
             const statusInfo = STATUS_CONFIG[ticket.status];
             const warrantyInfo = calculateTicketWarranty(ticket);
+            const devices = getTicketDevices(ticket);
+            const canDeliveryNote =
+              ticket.status === 'repaired' ||
+              ticket.status === 'ready_pickup' ||
+              ticket.status === 'completed';
+
             const deviceIcon =
               ticket.deviceType === 'printer' ? (
                 <Printer className="w-4 h-4 text-purple-500" />
@@ -508,12 +771,20 @@ export const RepairTickets: React.FC<RepairTicketsProps> = ({
                         {deviceIcon}
                       </div>
                       <div>
-                        <span className="font-mono text-xs font-bold text-blue-600 dark:text-blue-400">
-                          {ticket.ticketNumber}
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono text-xs font-bold text-blue-600 dark:text-blue-400">
+                            {ticket.ticketNumber}
+                          </span>
+                          {devices.length > 1 && (
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300">
+                              <Layers className="w-2.5 h-2.5" />
+                              <span>{devices.length} เครื่อง</span>
+                            </span>
+                          )}
+                        </div>
                         <div className="flex items-center gap-1.5 text-slate-400 text-[11px]">
                           <Calendar className="w-3 h-3" />
-                          <span>รับเข้า: {ticket.receivedDate}</span>
+                          <span>รับเข้า: {formatThaiDateFull(ticket.receivedDate)}</span>
                         </div>
                       </div>
                     </div>
@@ -586,14 +857,27 @@ export const RepairTickets: React.FC<RepairTicketsProps> = ({
 
                   {/* Device & Problem Details */}
                   <div className="mt-3 p-2.5 rounded-lg bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-700/60 text-xs space-y-1.5">
-                    <div className="flex justify-between items-baseline font-semibold text-slate-800 dark:text-slate-200">
-                      <span>{ticket.brand} {ticket.model}</span>
-                      {ticket.serialNumber && (
-                        <span className="text-[10px] text-slate-400 font-mono">
-                          SN: {ticket.serialNumber}
-                        </span>
-                      )}
-                    </div>
+                    {devices.length > 1 ? (
+                      <div className="space-y-1">
+                        {devices.map((dev, idx) => (
+                          <div key={dev.id} className="flex justify-between items-baseline font-semibold text-slate-800 dark:text-slate-200 text-[11px]">
+                            <span>{idx + 1}. {dev.brand} {dev.model}</span>
+                            {dev.serialNumber && (
+                              <span className="text-[10px] text-slate-400 font-mono">SN: {dev.serialNumber}</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="flex justify-between items-baseline font-semibold text-slate-800 dark:text-slate-200">
+                        <span>{ticket.brand} {ticket.model}</span>
+                        {ticket.serialNumber && (
+                          <span className="text-[10px] text-slate-400 font-mono">
+                            SN: {ticket.serialNumber}
+                          </span>
+                        )}
+                      </div>
+                    )}
 
                     <p className="text-slate-600 dark:text-slate-300 line-clamp-2">
                       <span className="font-medium text-slate-500">อาการ: </span>
@@ -697,24 +981,35 @@ export const RepairTickets: React.FC<RepairTicketsProps> = ({
                   </div>
 
                   {/* Action Buttons */}
-                  <div className="flex items-center justify-between pt-1">
-                    <div className="flex items-center gap-1">
+                  <div className="flex items-center justify-between pt-1 flex-wrap gap-1">
+                    <div className="flex items-center gap-1 flex-wrap">
                       <button
                         onClick={() => onPrintTicket(ticket)}
                         title="พิมพ์ใบรับซ่อม / ใบเสร็จติด QR Code"
-                        className="flex items-center gap-1 px-2 py-1 rounded bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-medium transition-colors"
+                        className="flex items-center gap-1 px-2 py-1 rounded bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-medium transition-colors cursor-pointer"
                       >
                         <PrintIcon className="w-3.5 h-3.5" />
-                        <span>พิมพ์ใบรับซ่อม</span>
+                        <span>พิมพ์</span>
                       </button>
+
+                      {canDeliveryNote && (
+                        <button
+                          onClick={() => onPrintTicket(ticket, 'delivery_note')}
+                          title="พิมพ์ใบส่งมอบของ (ส่งคืนลูกค้า)"
+                          className="flex items-center gap-1 px-2 py-1 rounded bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold transition-colors cursor-pointer"
+                        >
+                          <PackageCheck className="w-3.5 h-3.5" />
+                          <span>ใบส่งมอบของ</span>
+                        </button>
+                      )}
 
                       <button
                         onClick={() => onLineNotify(ticket)}
                         title="ส่งข้อความแจ้งเตือนผ่าน LINE"
-                        className="flex items-center gap-1 px-2 py-1 rounded bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 text-xs font-medium transition-colors"
+                        className="flex items-center gap-1 px-2 py-1 rounded bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 text-xs font-medium transition-colors cursor-pointer"
                       >
                         <MessageSquare className="w-3.5 h-3.5" />
-                        <span>แจ้ง LINE</span>
+                        <span>LINE</span>
                       </button>
                     </div>
 

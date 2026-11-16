@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { RepairTicket, ShopSettings, STATUS_CONFIG, DEVICE_LABELS, POSSaleRecord } from '../types';
+import { RepairTicket, ShopSettings, STATUS_CONFIG, POSSaleRecord, RepairDocumentType } from '../types';
+import { getTicketDevices, formatDevicesSummary } from '../utils/ticketDevices';
 import {
   Calendar,
   TrendingUp,
@@ -24,7 +25,7 @@ interface DailyReportViewProps {
   posSales?: POSSaleRecord[];
   shopSettings: ShopSettings;
   onSelectTicket: (ticket: RepairTicket) => void;
-  onPrintTicket: (ticket: RepairTicket) => void;
+  onPrintTicket: (ticket: RepairTicket, docType?: RepairDocumentType) => void;
   onViewPOSReceipt?: (sale: POSSaleRecord) => void;
   onOpenGovBilling?: () => void;
 }
@@ -121,13 +122,18 @@ export const DailyReportView: React.FC<DailyReportViewProps> = ({
     if (!term) return tickets;
 
     return tickets.filter(t => {
+      const devices = getTicketDevices(t);
+      const matchDevice = devices.some(d =>
+        d.brand.toLowerCase().includes(term) ||
+        d.model.toLowerCase().includes(term) ||
+        (d.serialNumber && d.serialNumber.toLowerCase().includes(term)) ||
+        d.problemDescription.toLowerCase().includes(term)
+      );
       return (
         t.ticketNumber.toLowerCase().includes(term) ||
         t.customerName.toLowerCase().includes(term) ||
         t.customerPhone.includes(term) ||
-        t.brand.toLowerCase().includes(term) ||
-        t.model.toLowerCase().includes(term) ||
-        (t.serialNumber && t.serialNumber.toLowerCase().includes(term)) ||
+        matchDevice ||
         t.problemDescription.toLowerCase().includes(term)
       );
     });
@@ -137,7 +143,7 @@ export const DailyReportView: React.FC<DailyReportViewProps> = ({
   const exportToCSV = () => {
     const headers = ['TicketNumber,Date,Customer,Phone,Device,Brand,Model,SN,Status,Labor,Parts,Discount,Total,Paid'];
     const rows = dailyCompletedTickets.map(t =>
-      `"${t.ticketNumber}","${t.receivedDate}","${t.customerName}","${t.customerPhone}","${t.deviceType}","${t.brand}","${t.model}","${t.serialNumber || ''}","${t.status}",${t.laborCost || 0},${t.partsCost || 0},${t.discount || 0},${t.totalAmount || 0},"${t.isPaid ? 'Paid' : 'Unpaid'}"`
+      `"${t.ticketNumber}","${t.receivedDate}","${t.customerName}","${t.customerPhone}","${t.deviceType}","${formatDevicesSummary(t)}","${t.model}","${t.serialNumber || ''}","${t.status}",${t.laborCost || 0},${t.partsCost || 0},${t.discount || 0},${t.totalAmount || 0},"${t.isPaid ? 'Paid' : 'Unpaid'}"`
     );
     const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers, ...rows].join('\n');
     const encodedUri = encodeURI(csvContent);
@@ -398,7 +404,7 @@ export const DailyReportView: React.FC<DailyReportViewProps> = ({
                           {t.customerName}
                         </td>
                         <td className="py-3 px-3 text-slate-600 dark:text-slate-300">
-                          {t.brand} {t.model}
+                          {formatDevicesSummary(t)}
                         </td>
                         <td className="py-3 px-3 max-w-xs truncate text-slate-600 dark:text-slate-300">
                           {t.technicianNotes || t.problemDescription}
@@ -578,13 +584,8 @@ export const DailyReportView: React.FC<DailyReportViewProps> = ({
                         </td>
                         <td className="py-3 px-3">
                           <div className="font-medium text-slate-800 dark:text-slate-200">
-                            {t.brand} {t.model}
+                            {formatDevicesSummary(t)}
                           </div>
-                          {t.serialNumber && (
-                            <div className="text-[10px] text-slate-400 font-mono">
-                              SN: {t.serialNumber}
-                            </div>
-                          )}
                         </td>
                         <td className="py-3 px-3 max-w-xs truncate text-slate-600 dark:text-slate-300">
                           {t.technicianNotes || t.problemDescription}

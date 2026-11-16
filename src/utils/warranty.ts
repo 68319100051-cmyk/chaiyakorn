@@ -1,5 +1,6 @@
 import { RepairTicket } from '../types';
 import { normalizePhone } from './customerLookup';
+import { getTicketDevices } from './ticketDevices';
 
 export interface WarrantyCalculationResult {
   hasWarranty: boolean;
@@ -202,7 +203,9 @@ export function checkActiveWarranty(
   // 1. First priority: Exact Serial Number match (most accurate)
   if (cleanSerial.length >= 4) {
     for (const t of candidates) {
-      if (t.serialNumber && t.serialNumber.trim().toLowerCase() === cleanSerial) {
+      const devices = getTicketDevices(t);
+      const hasSerial = devices.some(d => d.serialNumber && d.serialNumber.trim().toLowerCase() === cleanSerial);
+      if (hasSerial) {
         const warranty = calculateTicketWarranty(t);
         if (!warranty.isExpired && warranty.status !== 'no_warranty') {
           return {
@@ -219,8 +222,12 @@ export function checkActiveWarranty(
   if (cleanPhone.length >= 9 && cleanModel.length >= 2) {
     for (const t of candidates) {
       const tPhone = normalizePhone(t.customerPhone);
-      const tModel = (t.model || '').toLowerCase();
-      if (tPhone === cleanPhone && (tModel.includes(cleanModel) || cleanModel.includes(tModel))) {
+      const devices = getTicketDevices(t);
+      const hasModel = devices.some(d => {
+        const tModel = (d.model || '').toLowerCase();
+        return tModel && (tModel.includes(cleanModel) || cleanModel.includes(tModel));
+      });
+      if (tPhone === cleanPhone && hasModel) {
         const warranty = calculateTicketWarranty(t);
         if (!warranty.isExpired && warranty.status !== 'no_warranty') {
           return {
@@ -237,8 +244,12 @@ export function checkActiveWarranty(
   if (cleanName.length >= 3 && cleanModel.length >= 2) {
     for (const t of candidates) {
       const tName = (t.customerName || '').toLowerCase();
-      const tModel = (t.model || '').toLowerCase();
-      if (tName.includes(cleanName) && (tModel.includes(cleanModel) || cleanModel.includes(tModel))) {
+      const devices = getTicketDevices(t);
+      const hasModel = devices.some(d => {
+        const tModel = (d.model || '').toLowerCase();
+        return tModel && (tModel.includes(cleanModel) || cleanModel.includes(tModel));
+      });
+      if (tName.includes(cleanName) && hasModel) {
         const warranty = calculateTicketWarranty(t);
         if (!warranty.isExpired && warranty.status !== 'no_warranty') {
           return {

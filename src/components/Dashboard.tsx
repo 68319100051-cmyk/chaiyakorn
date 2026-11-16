@@ -3,9 +3,10 @@ import {
   RepairTicket,
   InventoryItem,
   STATUS_CONFIG,
-  DEVICE_LABELS,
-  POSSaleRecord
+  POSSaleRecord,
+  RepairDocumentType
 } from '../types';
+import { getTicketDevices, formatDevicesSummary } from '../utils/ticketDevices';
 import {
   Wrench,
   Clock,
@@ -31,7 +32,7 @@ interface DashboardProps {
   onNewTicket: () => void;
   onOpenPOS?: () => void;
   onSelectTicket: (ticket: RepairTicket) => void;
-  onPrintTicket: (ticket: RepairTicket) => void;
+  onPrintTicket: (ticket: RepairTicket, docType?: RepairDocumentType) => void;
   onLineNotify: (ticket: RepairTicket) => void;
   onViewAllTickets: () => void;
   onViewClosedTickets?: () => void;
@@ -95,12 +96,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
   // Low stock inventory items
   const lowStockItems = inventory.filter(i => i.stockQuantity <= i.minStockAlert);
 
-  // Device Breakdown
-  const computerCount = tickets.filter(t => t.deviceType === 'computer').length;
-  const laptopCount = tickets.filter(t => t.deviceType === 'laptop').length;
-  const printerCount = tickets.filter(t => t.deviceType === 'printer').length;
-  const otherCount = tickets.filter(t => t.deviceType === 'other').length;
-  const totalCount = tickets.length || 1;
+  // Device Breakdown (counts across all devices in multi-device tickets)
+  const allTicketDevices = tickets.flatMap(t => getTicketDevices(t));
+  const computerCount = allTicketDevices.filter(d => d.deviceType === 'computer').length;
+  const laptopCount = allTicketDevices.filter(d => d.deviceType === 'laptop').length;
+  const printerCount = allTicketDevices.filter(d => d.deviceType === 'printer').length;
+  const totalCount = allTicketDevices.length || 1;
 
   // Tickets ready for pickup (high priority)
   const readyTickets = tickets.filter(t => t.status === 'ready_pickup');
@@ -354,7 +355,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
                   <div className="mt-2.5 p-2 rounded-lg bg-slate-50 dark:bg-slate-900/50 text-xs text-slate-600 dark:text-slate-300">
                     <p className="font-semibold text-slate-800 dark:text-slate-200">
-                      {ticket.brand} {ticket.model}
+                      {formatDevicesSummary(ticket)}
                     </p>
                     <p className="text-slate-500 truncate mt-0.5">
                       {ticket.technicianNotes || ticket.problemDescription}
@@ -449,7 +450,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           {ticket.customerName}
                         </div>
                         <div className="text-[11px] text-slate-500">
-                          {ticket.brand} {ticket.model}
+                          {formatDevicesSummary(ticket)}
                         </div>
                       </td>
                       <td className="py-3 px-3 max-w-xs truncate text-slate-600 dark:text-slate-300">

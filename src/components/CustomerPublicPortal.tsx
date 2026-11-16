@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { RepairTicket, ShopSettings, STATUS_CONFIG, DEVICE_LABELS } from '../types';
 import { dbService } from '../services/db';
 import { calculateTicketWarranty } from '../utils/warranty';
+import { getTicketDevices, formatDevicesSummary } from '../utils/ticketDevices';
+import { formatThaiDateFull } from '../utils/printHelpers';
 import {
   Wrench,
   CheckCircle2,
@@ -72,6 +74,7 @@ export const CustomerPublicPortal: React.FC<CustomerPublicPortalProps> = ({
   const isReadyForPickup = ticket?.status === 'ready_pickup' || ticket?.status === 'repaired';
   const isCompleted = ticket?.status === 'completed';
   const isCancelled = ticket?.status === 'cancelled';
+  const ticketDevices = ticket ? getTicketDevices(ticket) : [];
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 text-slate-100 flex flex-col justify-between selection:bg-blue-500 selection:text-white">
@@ -216,14 +219,37 @@ export const CustomerPublicPortal: React.FC<CustomerPublicPortalProps> = ({
                       <User className="w-3 h-3 text-cyan-400" />
                       คุณ{ticket.customerName}
                     </span>
+                    {ticketDevices.length > 1 && (
+                      <span className="text-xs font-bold px-2 py-0.5 rounded-md bg-purple-500/20 text-purple-200 border border-purple-500/30">
+                        {ticketDevices.length} เครื่อง
+                      </span>
+                    )}
                   </div>
-                  <h2 className="text-lg sm:text-xl font-extrabold text-white mt-1">
-                    {ticket.brand} {ticket.model}
-                  </h2>
-                  <p className="text-xs text-slate-400">
-                    ประเภท: <span className="text-slate-200 font-medium">{DEVICE_LABELS[ticket.deviceType]?.label || ticket.deviceType}</span>
-                    {ticket.serialNumber && <span> • S/N: <span className="font-mono">{ticket.serialNumber}</span></span>}
-                  </p>
+                  {ticketDevices.length <= 1 ? (
+                    <>
+                      <h2 className="text-lg sm:text-xl font-extrabold text-white mt-1">
+                        {ticket.brand} {ticket.model}
+                      </h2>
+                      <p className="text-xs text-slate-400">
+                        ประเภท: <span className="text-slate-200 font-medium">{DEVICE_LABELS[ticket.deviceType]?.label || ticket.deviceType}</span>
+                        {ticket.serialNumber && <span> • S/N: <span className="font-mono">{ticket.serialNumber}</span></span>}
+                      </p>
+                    </>
+                  ) : (
+                    <div className="space-y-1.5 mt-2">
+                      {ticketDevices.map((dev, idx) => (
+                        <div key={dev.id || idx} className="p-2 rounded-lg bg-slate-900/60 border border-slate-700/60 text-xs">
+                          <div className="font-bold text-white">
+                            {idx + 1}. {dev.brand} {dev.model}
+                            {dev.serialNumber && <span className="text-slate-400 font-mono text-[11px] ml-2">S/N: {dev.serialNumber}</span>}
+                          </div>
+                          <div className="text-[11px] text-slate-400 mt-0.5">
+                            {DEVICE_LABELS[dev.deviceType]?.label || dev.deviceType} • อาการ: {dev.problemDescription}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div className="text-right shrink-0">
@@ -233,7 +259,7 @@ export const CustomerPublicPortal: React.FC<CustomerPublicPortalProps> = ({
                     {STATUS_CONFIG[ticket.status].label}
                   </span>
                   <p className="text-[10px] text-slate-400 mt-1">
-                    รับเข้า: {ticket.receivedDate}
+                    รับเข้า: {formatThaiDateFull(ticket.receivedDate)}
                   </p>
                 </div>
               </div>

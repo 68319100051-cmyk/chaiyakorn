@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { RepairTicket, InventoryItem, ShopSettings, RepairStatus, UsedPart, POSSaleRecord } from './types';
+import { RepairTicket, InventoryItem, ShopSettings, RepairStatus, UsedPart, POSSaleRecord, RepairDocumentType } from './types';
 import { dbService } from './services/db';
 import { testConnection } from './firebase/config';
 import { INITIAL_SHOP_SETTINGS } from './utils/mockSeedData';
@@ -38,6 +38,7 @@ export default function App() {
 
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
   const [ticketToPrint, setTicketToPrint] = useState<RepairTicket | null>(null);
+  const [printDocType, setPrintDocType] = useState<RepairDocumentType | undefined>(undefined);
 
   const [isPOSReceiptOpen, setIsPOSReceiptOpen] = useState(false);
   const [selectedSaleToPrint, setSelectedSaleToPrint] = useState<POSSaleRecord | null>(null);
@@ -155,8 +156,9 @@ export default function App() {
     });
   };
 
-  const handlePrintTicket = (ticket: RepairTicket) => {
+  const handlePrintTicket = (ticket: RepairTicket, docType?: RepairDocumentType) => {
     setTicketToPrint(ticket);
+    setPrintDocType(docType);
     setIsPrintModalOpen(true);
   };
 
@@ -352,13 +354,18 @@ export default function App() {
         allTickets={tickets}
         posSales={posSales}
         generateNextTicketNumber={() => dbService.generateNextTicketNumber(tickets)}
+        onPrintTicket={handlePrintTicket}
       />
 
       <PrintReceiptModal
         isOpen={isPrintModalOpen}
-        onClose={() => setIsPrintModalOpen(false)}
+        onClose={() => {
+          setIsPrintModalOpen(false);
+          setPrintDocType(undefined);
+        }}
         ticket={ticketToPrint}
         shopSettings={shopSettings}
+        initialDocType={printDocType}
       />
 
       <POSReceiptModal

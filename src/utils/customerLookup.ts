@@ -1,5 +1,6 @@
 import { RepairTicket, POSSaleRecord, DeviceType, GovCreditInfo } from '../types';
 import { calculateTicketWarranty, WarrantyCalculationResult } from './warranty';
+import { getTicketDevices } from './ticketDevices';
 
 export interface CustomerDeviceHistory {
   deviceType: DeviceType;
@@ -112,17 +113,17 @@ export function buildCustomerProfiles(
     const profileKey = cleanPhone.length >= 9 ? `phone-${cleanPhone}` : `name-${cleanName.toLowerCase()}`;
 
     const existing = profileMap.get(profileKey);
-
     const warrantyCalc = calculateTicketWarranty(t);
+    const ticketDevices = getTicketDevices(t);
 
-    const deviceEntry: CustomerDeviceHistory = {
-      deviceType: t.deviceType || 'printer',
-      brand: t.brand || 'อื่นๆ',
-      model: t.model || '',
-      serialNumber: t.serialNumber || '',
-      color: t.color || '',
-      accessories: t.accessories || [],
-      problemDescription: t.problemDescription || '',
+    const deviceEntries: CustomerDeviceHistory[] = ticketDevices.map(dev => ({
+      deviceType: dev.deviceType || 'printer',
+      brand: dev.brand || 'อื่นๆ',
+      model: dev.model || '',
+      serialNumber: dev.serialNumber || '',
+      color: dev.color || '',
+      accessories: dev.accessories || [],
+      problemDescription: dev.problemDescription || '',
       ticketNumber: t.ticketNumber,
       ticketDate: t.receivedDate || t.createdAt?.split('T')[0] || '',
       deliveredDate: t.deliveredDate,
@@ -130,7 +131,7 @@ export function buildCustomerProfiles(
       warrantyCalculation: warrantyCalc,
       isUnderWarranty: !warrantyCalc.isExpired && (warrantyCalc.status === 'active' || warrantyCalc.status === 'expiring_soon'),
       warrantyDaysRemaining: warrantyCalc.daysRemaining
-    };
+    }));
 
     if (existing) {
       existing.totalVisits += 1;
@@ -140,13 +141,14 @@ export function buildCustomerProfiles(
       if (t.customerAddress) existing.customerAddress = t.customerAddress;
       if (t.govCreditInfo) existing.govCreditInfo = t.govCreditInfo;
 
-      // Add device if not duplicate
-      const duplicateDevice = existing.devices.some(
-        d => d.model.toLowerCase() === deviceEntry.model.toLowerCase() &&
-             d.serialNumber === deviceEntry.serialNumber
-      );
-      if (!duplicateDevice && (deviceEntry.model || deviceEntry.brand)) {
-        existing.devices.unshift(deviceEntry);
+      for (const deviceEntry of deviceEntries) {
+        const duplicateDevice = existing.devices.some(
+          d => d.model.toLowerCase() === deviceEntry.model.toLowerCase() &&
+               d.serialNumber === deviceEntry.serialNumber
+        );
+        if (!duplicateDevice && (deviceEntry.model || deviceEntry.brand)) {
+          existing.devices.unshift(deviceEntry);
+        }
       }
 
       existing.latestTicketNumber = t.ticketNumber;
@@ -160,7 +162,7 @@ export function buildCustomerProfiles(
         customerLineId: t.customerLineId || '',
         customerAddress: t.customerAddress || '',
         govCreditInfo: t.govCreditInfo,
-        devices: (deviceEntry.model || deviceEntry.brand) ? [deviceEntry] : [],
+        devices: deviceEntries.filter(d => d.model || d.brand),
         totalVisits: 1,
         latestTicketNumber: t.ticketNumber,
         latestVisitDate: t.receivedDate || t.createdAt?.split('T')[0] || '',

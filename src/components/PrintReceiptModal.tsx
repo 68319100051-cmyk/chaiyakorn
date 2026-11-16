@@ -1,9 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import QRCode from 'qrcode';
-import { RepairTicket, ShopSettings, DEVICE_LABELS, GovDocumentType } from '../types';
+import {
+  RepairTicket,
+  ShopSettings,
+  DEVICE_LABELS,
+  RepairDocumentType
+} from '../types';
 import { generatePromptPayQRDataUrl } from '../utils/promptpay';
 import { bahtText } from '../utils/bahtText';
-import { getGovCreditDueStatus } from '../utils/govCredit';
+import {
+  formatThaiDateFull,
+  formatTodayThaiFull,
+  formatMoneyPlain
+} from '../utils/printHelpers';
+import { getTicketDevices, getTicketAllParts } from '../utils/ticketDevices';
 import {
   X,
   Printer,
@@ -11,17 +21,11 @@ import {
   CheckCircle,
   Copy,
   ExternalLink,
-  CreditCard,
-  Building2,
   FileText,
   FileCheck,
   Receipt,
   ClipboardList,
-  Calendar,
-  Clock,
-  ShieldCheck,
-  CheckSquare,
-  Scissors
+  PackageCheck
 } from 'lucide-react';
 import { Barcode } from './Barcode';
 
@@ -30,24 +34,28 @@ interface PrintReceiptModalProps {
   onClose: () => void;
   ticket: RepairTicket | null;
   shopSettings: ShopSettings;
+  initialDocType?: RepairDocumentType;
 }
 
 export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
   isOpen,
   onClose,
   ticket,
-  shopSettings
+  shopSettings,
+  initialDocType
 }) => {
   const [printFormat, setPrintFormat] = useState<'a5' | 'slip'>('a5');
-  const [docType, setDocType] = useState<GovDocumentType>('work_order');
+  const [docType, setDocType] = useState<RepairDocumentType>('work_order');
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('');
   const [promptPayQrUrl, setPromptPayQrUrl] = useState<string>('');
   const [copiedLink, setCopiedLink] = useState(false);
 
-  // Set default document type based on ticket status & payment method
+  // Set default document type based on prop, ticket status & payment method
   useEffect(() => {
     if (ticket) {
-      if (ticket.paymentMethod === 'gov_credit') {
+      if (initialDocType) {
+        setDocType(initialDocType);
+      } else if (ticket.paymentMethod === 'gov_credit') {
         if (ticket.status === 'pending' || ticket.status === 'diagnosing') {
           setDocType('quotation');
         } else if (ticket.govCreditInfo?.billingStatus === 'paid' || ticket.isPaid) {
@@ -55,89 +63,102 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
         } else {
           setDocType('invoice');
         }
+      } else if (ticket.status === 'completed' && ticket.isPaid) {
+        setDocType('receipt');
+      } else if (ticket.status === 'repaired' || ticket.status === 'ready_pickup') {
+        setDocType('delivery_note');
       } else {
-        if (ticket.status === 'completed' && ticket.isPaid) {
-          setDocType('receipt');
-        } else {
-          setDocType('work_order');
-        }
+        setDocType('work_order');
       }
 
-      // 1. Build public tracking URL
+      // 1. Build public tracking URL QR
       const trackingUrl = `${window.location.origin}/?track=${encodeURIComponent(ticket.ticketNumber)}`;
       QRCode.toDataURL(
         trackingUrl,
         {
-          width: 160,
+          width: 180,
           margin: 1,
-          color: {
-            dark: '#000000',
-            light: '#ffffff'
-          }
+          color: { dark: '#000000', light: '#ffffff' }
         },
         (err, url) => {
-          if (!err && url) {
-            setQrCodeDataUrl(url);
-          }
+          if (!err && url) setQrCodeDataUrl(url);
         }
       );
 
       // 2. Generate PromptPay QR Code
       const ppTarget = shopSettings.promptPayId || shopSettings.shopPhone || '0834268058';
-      generatePromptPayQRDataUrl(ppTarget, ticket.totalAmount, { width: 160 })
+      generatePromptPayQRDataUrl(ppTarget, ticket.totalAmount, { width: 180 })
         .then(url => setPromptPayQrUrl(url))
         .catch(err => console.error('PromptPay QR generate error:', err));
     }
-  }, [ticket, shopSettings]);
+  }, [ticket, shopSettings, initialDocType]);
 
   if (!isOpen || !ticket) return null;
 
+  const devices = getTicketDevices(ticket);
+  const allParts = getTicketAllParts(ticket);
+  const isMultiDevice = devices.length > 1;
   const trackingUrl = `${window.location.origin}/?track=${encodeURIComponent(ticket.ticketNumber)}`;
   const isGovCredit = ticket.paymentMethod === 'gov_credit';
   const totalInBahtText = bahtText(ticket.totalAmount || 0);
 
   // Document Numbering
   const docSeq = ticket.ticketNumber.replace(/^(REP|POS)-/i, '');
-  const documentNumbers: Record<GovDocumentType, string> = {
+  const documentNumbers: Record<RepairDocumentType, string> = {
     quotation: `QT-${docSeq}`,
     invoice: `INV-${docSeq}`,
     receipt: `REC-${docSeq}`,
-    work_order: ticket.ticketNumber
+    work_order: ticket.ticketNumber,
+    delivery_note: `DN-${docSeq}`
   };
 
-  const documentTitles: Record<GovDocumentType, { th: string; en: string; bg: string; subtitle: string }> = {
+  const documentTitles: Record<RepairDocumentType, { th: string; subtitle: string }> = {
     quotation: {
       th: 'ใบเสนอราคา / ประมาณการค่าใช้จ่าย',
-      en: 'QUOTATION',
-      bg: 'bg-blue-800',
-      subtitle: 'เอกสารเสนอราคาเพื่อขออนุมัติงบประมาณก่อนดำเนินการซ่อม (โรงเรียน/ส่วนราชการ)'
+      subtitle: 'เอกสารเสนอราคาเพื่อขออนุมัติงบประมาณก่อนดำเนินการซ่อม'
     },
     invoice: {
       th: isGovCredit ? 'ใบแจ้งหนี้ / ใบวางบิลงานซ่อมราชการ' : 'ใบแจ้งหนี้ / ใบวางบิล',
-      en: 'INVOICE / BILLING NOTE',
-      bg: 'bg-purple-900',
-      subtitle: 'เอกสารส่งมอบงานและเรียกเก็บเงินตามข้อตกลงเครดิตราชการ'
+      subtitle: 'เอกสารส่งมอบงานและเรียกเก็บเงิน'
     },
     receipt: {
-      th: 'ใบเสร็จรับเงิน / ใบส่งมอบ',
-      en: 'RECEIPT',
-      bg: 'bg-emerald-800',
-      subtitle: 'หลักฐานการรับชำระเงินและส่งมอบงานซ่อมเรียบร้อยแล้ว'
+      th: 'บิลเงินสด / ใบเสร็จรับเงิน',
+      subtitle: 'หลักฐานการรับชำระเงินและส่งมอบงานซ่อม'
     },
     work_order: {
-      th: 'ใบรับเครื่องซ่อม / WORK ORDER',
-      en: 'JOB ORDER',
-      bg: 'bg-slate-900',
+      th: 'ใบรับเครื่องซ่อม',
       subtitle: 'หลักฐานการรับเครื่องเพื่อตรวจเช็คและซ่อมบำรุง'
+    },
+    delivery_note: {
+      th: 'ใบส่งมอบของ',
+      subtitle: 'ใบเสร็จส่งมอบเครื่องคืนลูกค้าและรับรองงานซ่อม'
     }
   };
 
   const currentDoc = documentTitles[docType];
   const activeDocNo = documentNumbers[docType];
 
-  const dueStatus = ticket.govCreditInfo
-    ? getGovCreditDueStatus(ticket.govCreditInfo.dueDate, ticket.govCreditInfo.billingStatus)
-    : null;
+  // Format all dates strictly in full Thai Buddhist Era format ("16 พฤศจิกายน 2569")
+  const todayThaiFull = formatTodayThaiFull();
+  const receivedThaiFull = formatThaiDateFull(ticket.receivedDate || ticket.createdAt, todayThaiFull);
+  const deliveredThaiFull = formatThaiDateFull(ticket.deliveredDate || new Date(), todayThaiFull);
+  const warrantyExpiryThaiFull = ticket.warrantyExpiryDate
+    ? formatThaiDateFull(ticket.warrantyExpiryDate, '')
+    : '';
+  const dueDateThaiFull = ticket.govCreditInfo?.dueDate
+    ? formatThaiDateFull(ticket.govCreditInfo.dueDate, '')
+    : '';
+
+  // Estimate line item density for smart A5 auto-fit vs clean multi-page flow
+  const estimatedRowCount =
+    (isMultiDevice ? devices.length * 2 : 1) + allParts.length;
+  const isCompactMode = estimatedRowCount >= 5 && estimatedRowCount <= 9;
+  const isMultiPageMode = estimatedRowCount > 9;
+
+  const subtotalBeforeDiscount = (ticket.laborCost || 0) + (ticket.partsCost || 0);
+  const discountValue = Number(ticket.discount || 0);
+  const totalAmountValue = Number(ticket.totalAmount || 0);
+  const warrantyDays = ticket.warrantyDays ?? 30;
 
   const handleCopyLink = () => {
     navigator.clipboard.writeText(trackingUrl);
@@ -149,35 +170,77 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
     window.print();
   };
 
-  const todayThai = new Date().toLocaleDateString('th-TH', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric'
-  });
+  // Build unified item rows for the table (supports 1 or N devices cleanly)
+  interface PrintLineItem {
+    description: string;
+    qty: number;
+    unit: string;
+    unitPrice: number;
+    total: number;
+  }
+
+  const lineItems: PrintLineItem[] = [];
+  if (isMultiDevice) {
+    devices.forEach((dev, idx) => {
+      if (dev.laborCost > 0 || dev.partsUsed.length === 0) {
+        lineItems.push({
+          description: `เครื่องที่ ${idx + 1}: ค่าบริการ/ค่าแรง (${dev.brand} ${dev.model})`,
+          qty: 1,
+          unit: 'เครื่อง',
+          unitPrice: dev.laborCost || 0,
+          total: dev.laborCost || 0
+        });
+      }
+      dev.partsUsed.forEach(part => {
+        lineItems.push({
+          description: `เครื่องที่ ${idx + 1}: ${part.itemName}`,
+          qty: Number(part.quantity || 1),
+          unit: 'ชิ้น',
+          unitPrice: Number(part.unitPrice || 0),
+          total: Number(part.totalPrice || 0)
+        });
+      });
+    });
+  } else {
+    lineItems.push({
+      description:
+        docType === 'delivery_note'
+          ? `ค่าบริการซ่อมและตรวจเช็ค (${devices[0]?.brand || ticket.brand} ${devices[0]?.model || ticket.model})`
+          : 'ค่าบริการตรวจเช็คและค่าแรงซ่อมบำรุง',
+      qty: 1,
+      unit: 'งาน',
+      unitPrice: ticket.laborCost || 0,
+      total: ticket.laborCost || 0
+    });
+    allParts.forEach(part => {
+      lineItems.push({
+        description: part.itemName,
+        qty: Number(part.quantity || 1),
+        unit: 'ชิ้น',
+        unitPrice: Number(part.unitPrice || 0),
+        total: Number(part.totalPrice || 0)
+      });
+    });
+  }
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 print-modal-overlay">
-      {/* Modal Container */}
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/75 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 print-modal-overlay">
       <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-4xl w-full max-h-[96vh] flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 print-modal-card">
-        
-        {/* Modal Toolbar (hidden in print) */}
+        {/* Modal Toolbar (Hidden in Print) */}
         <div className="p-3 sm:p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/80 rounded-t-2xl space-y-3 print:hidden">
           <div className="flex flex-wrap items-center justify-between gap-2.5">
             <div className="flex items-center gap-2">
               <Printer className="w-5 h-5 text-blue-600" />
               <div>
-                <h2 className="text-sm sm:text-base font-bold text-slate-800 dark:text-white flex items-center gap-2">
-                  <span>พิมพ์เอกสาร: {currentDoc.th}</span>
+                <h2 className="text-sm sm:text-base font-bold text-slate-800 dark:text-white flex items-center gap-2 flex-wrap">
+                  <span>ตัวอย่างก่อนพิมพ์: {currentDoc.th}</span>
                   <span className="font-mono text-blue-600 font-bold">{activeDocNo}</span>
                 </h2>
-                <p className="text-[11px] text-slate-500">
-                  {currentDoc.subtitle}
-                </p>
+                <p className="text-xs text-slate-500">{currentDoc.subtitle}</p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              {/* Paper Format Selector */}
+            <div className="flex items-center gap-2 flex-wrap">
               <div className="flex items-center bg-slate-200 dark:bg-slate-700 p-0.5 rounded-lg text-xs font-semibold">
                 <button
                   type="button"
@@ -188,7 +251,7 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-800'
                   }`}
                 >
-                  📄 A5 แนวตั้ง (148 × 210 มม.)
+                  A5 แนวตั้ง (148 × 210 มม.)
                 </button>
                 <button
                   type="button"
@@ -204,14 +267,16 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
               </div>
 
               <button
+                type="button"
                 onClick={handlePrint}
                 className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-blue-600 text-white font-bold hover:bg-blue-700 shadow-sm transition-all cursor-pointer text-xs"
               >
                 <Printer className="w-4 h-4" />
-                <span>พิมพ์เอกสาร</span>
+                <span>ยืนยันพิมพ์เอกสาร</span>
               </button>
 
               <button
+                type="button"
                 onClick={onClose}
                 className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-700 transition-colors cursor-pointer"
               >
@@ -220,34 +285,34 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
             </div>
           </div>
 
-          {/* Document Type Selector (Quotation, Invoice, Receipt, Work Order) */}
+          {/* Document Type Selector */}
           <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-slate-200 dark:border-slate-700/80">
-            <span className="text-xs font-semibold text-slate-500 mr-1">เลือกประเภทเอกสาร:</span>
-            
+            <span className="text-xs font-semibold text-slate-500 mr-1">ประเภทเอกสาร:</span>
+
             <button
               type="button"
-              onClick={() => setDocType('quotation')}
+              onClick={() => setDocType('work_order')}
               className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                docType === 'quotation'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600 hover:bg-blue-50'
+                docType === 'work_order'
+                  ? 'bg-slate-800 text-white shadow-xs'
+                  : 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600 hover:bg-slate-100'
               }`}
             >
-              <FileText className="w-3.5 h-3.5" />
-              <span>📄 ใบเสนอราคา (ขออนุมัติงบ)</span>
+              <ClipboardList className="w-3.5 h-3.5" />
+              <span>ใบรับเครื่องซ่อม</span>
             </button>
 
             <button
               type="button"
-              onClick={() => setDocType('invoice')}
+              onClick={() => setDocType('delivery_note')}
               className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                docType === 'invoice'
-                  ? 'bg-purple-600 text-white shadow-xs'
-                  : 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600 hover:bg-purple-50'
+                docType === 'delivery_note'
+                  ? 'bg-teal-600 text-white shadow-xs'
+                  : 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600 hover:bg-teal-50'
               }`}
             >
-              <FileCheck className="w-3.5 h-3.5" />
-              <span>💼 ใบแจ้งหนี้ / ใบวางบิล</span>
+              <PackageCheck className="w-3.5 h-3.5" />
+              <span>ใบส่งมอบของ</span>
             </button>
 
             <button
@@ -260,41 +325,55 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
               }`}
             >
               <Receipt className="w-3.5 h-3.5" />
-              <span>🧾 ใบเสร็จรับเงิน</span>
+              <span>บิลเงินสด / ใบเสร็จรับเงิน</span>
             </button>
 
             <button
               type="button"
-              onClick={() => setDocType('work_order')}
+              onClick={() => setDocType('quotation')}
               className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                docType === 'work_order'
-                  ? 'bg-slate-800 text-white shadow-xs'
-                  : 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600 hover:bg-slate-100'
+                docType === 'quotation'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600 hover:bg-blue-50'
               }`}
             >
-              <ClipboardList className="w-3.5 h-3.5" />
-              <span>📋 ใบรับเครื่องซ่อม</span>
+              <FileText className="w-3.5 h-3.5" />
+              <span>ใบเสนอราคา</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setDocType('invoice')}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                docType === 'invoice'
+                  ? 'bg-purple-600 text-white shadow-xs'
+                  : 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600 hover:bg-purple-50'
+              }`}
+            >
+              <FileCheck className="w-3.5 h-3.5" />
+              <span>ใบแจ้งหนี้ / ใบวางบิล</span>
             </button>
           </div>
         </div>
 
-        {/* Live URL Helper Bar (hidden in print) */}
+        {/* Tracking URL Helper Bar (Hidden in Print) */}
         <div className="bg-blue-50 dark:bg-blue-950/40 px-4 py-2 border-b border-blue-100 dark:border-blue-900/40 flex flex-wrap items-center justify-between text-xs gap-2 print:hidden">
           <div className="flex items-center gap-2 text-blue-800 dark:text-blue-300">
             <QrCode className="w-4 h-4 shrink-0" />
-            <span>ลิงก์เช็คสถานะซ่อมสำหรับลูกค้า: </span>
-            <span className="font-mono bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-blue-200 dark:border-blue-800 text-[11px] truncate max-w-[280px]">
+            <span>ลิงก์เช็คสถานะซ่อม:</span>
+            <span className="font-mono bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-blue-200 dark:border-blue-800 text-[11px] truncate max-w-[260px]">
               {trackingUrl}
             </span>
           </div>
 
           <div className="flex items-center gap-2">
             <button
+              type="button"
               onClick={handleCopyLink}
               className="flex items-center gap-1 px-2.5 py-1 rounded bg-white dark:bg-slate-800 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 text-blue-700 dark:text-blue-300 font-medium cursor-pointer"
             >
               {copiedLink ? <CheckCircle className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-              <span>{copiedLink ? 'คัดลอกแล้ว!' : 'คัดลอกลิงก์'}</span>
+              <span>{copiedLink ? 'คัดลอกแล้ว' : 'คัดลอกลิงก์'}</span>
             </button>
 
             <a
@@ -309,215 +388,234 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
           </div>
         </div>
 
-        {/* Scrollable Printable Paper Preview Area */}
-        <div className="flex-1 overflow-y-auto overflow-x-auto w-full p-2 sm:p-6 bg-slate-200/70 dark:bg-slate-950 flex flex-col items-center print:p-0 print:bg-white print:overflow-visible">
-          
-          {/* ================= A5 FORMAT (148mm x 210mm) ================= */}
+        {/* Scrollable Preview Area */}
+        <div className="flex-1 overflow-y-auto overflow-x-auto w-full p-2 sm:p-6 bg-slate-200/75 dark:bg-slate-950 flex flex-col items-center print:p-0 print:bg-white print:overflow-visible">
           {printFormat === 'a5' ? (
             <div className="flex flex-col items-center w-full">
-              {/* Paper Dimension Visual Indicator for Screen */}
-              <div className="mb-2 px-3 py-1 rounded-full bg-blue-100 dark:bg-blue-950/70 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-xs font-bold flex items-center gap-1.5 shadow-xs print:hidden">
-                <span>📄 สัดส่วนกระดาษ A5 แนวตั้ง (148 มม. × 210 มม.)</span>
+              <div className="mb-2 px-3 py-1 rounded-full bg-blue-100 dark:bg-blue-950/70 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-xs font-bold print:hidden">
+                ตัวอย่างกระดาษ A5 แนวตั้ง (148 × 210 มม. | ขอบ ซ้าย-ขวา-บน 6 มม. / ล่าง 3.5 มม.)
               </div>
 
               <div
                 id="printable-receipt-a5"
-                style={{ fontFamily: "'Prompt', 'Sarabun', -apple-system, sans-serif" }}
-                className="a5-portrait-paper bg-white text-slate-900 w-[148mm] min-h-[210mm] max-w-full p-3.5 mx-auto shadow-2xl rounded-sm border border-slate-300 text-[8.5px] leading-tight flex flex-col justify-between print:shadow-none print:border-none print:w-[140mm] print:h-[202mm] print:min-h-[202mm] print:p-0 print:m-0"
+                className={`a5-portrait-paper shadow-2xl border border-slate-300 mx-auto flex flex-col justify-between ${
+                  isCompactMode ? 'a5-compact' : ''
+                } ${isMultiPageMode ? 'a5-multi-page' : ''}`}
               >
-                {/* ================= MAIN RECEIPT SECTION ================= */}
-                <div className="flex flex-col justify-between flex-1">
-                  {/* 1. Header: Logo, Shop Info, Doc Number & Barcode */}
-                  <div className="flex justify-between items-start border-b border-slate-400 pb-1.5">
-                    <div className="flex items-start gap-2.5 flex-1 mr-2">
+                {/* ================= TOP + MIDDLE CONTENT ================= */}
+                <div className="space-y-1.5">
+                  {/* 1. HEADER: Shop Info Left | Doc Number & Thai Date Right (NO TOP BARCODE) */}
+                  <div className="flex justify-between items-start gap-2 border-b-2 border-slate-800 pb-1.5">
+                    <div className="flex items-start gap-2.5 min-w-0 flex-1">
                       {shopSettings.logoUrl && (
                         <img
                           src={shopSettings.logoUrl}
                           alt={shopSettings.shopName}
-                          className="h-13 sm:h-14 w-auto max-w-[105px] object-contain rounded border border-slate-200 p-0.5 shrink-0"
+                          className="h-14 w-auto max-w-[96px] object-contain shrink-0"
                         />
                       )}
-                      <div className="space-y-0.5">
-                        <h1 className="text-base sm:text-[18px] font-black text-slate-900 tracking-tight leading-tight">
+                      <div className="min-w-0 leading-snug">
+                        <h1 className="text-[13.5pt] font-extrabold text-slate-950 leading-tight">
                           {shopSettings.shopName}
                         </h1>
-                        <p className="text-[9px] text-slate-800 leading-snug">
+                        <p className="text-[9.5pt] text-slate-800 leading-snug">
                           {shopSettings.shopAddress}
                         </p>
-                        <p className="text-[9px] text-slate-800 font-medium">
-                          โทร. <span className="font-bold text-slate-900">{shopSettings.shopPhone}</span>
-                          {shopSettings.shopLineId && <span> | LINE: <span className="font-bold text-slate-900">{shopSettings.shopLineId}</span></span>}
+                        <p className="text-[9.5pt] text-slate-900 font-semibold">
+                          โทร. {shopSettings.shopPhone}
+                          {shopSettings.shopLineId ? ` | LINE: ${shopSettings.shopLineId}` : ''}
                         </p>
-                        <p className="text-[9px] text-slate-900 font-medium">
-                          เลขประจำตัวผู้เสียภาษี: <span className="font-mono font-bold text-[9.5px]">{shopSettings.taxId || '3930500607938'}</span>
-                        </p>
+                        {shopSettings.taxId && (
+                          <p className="text-[9pt] text-slate-800">
+                            เลขประจำตัวผู้เสียภาษี: {shopSettings.taxId}
+                          </p>
+                        )}
                       </div>
                     </div>
 
-                    <div className="flex flex-col items-end shrink-0">
-                      <div className="flex items-center gap-1.5 mb-0.5">
-                        <span className="text-[9px] font-bold text-slate-700">เลขที่</span>
-                        <span className="font-mono font-black text-sm text-slate-900">{activeDocNo}</span>
+                    <div className="text-right shrink-0 space-y-0.5">
+                      <div className="text-[10pt] text-slate-800 font-bold">
+                        เลขที่ <span className="font-mono text-[11pt] font-extrabold text-slate-950">{activeDocNo}</span>
                       </div>
-                      <div className="flex items-center gap-1.5 mb-0.5">
-                        <span className="text-[8.5px] text-slate-600">วันที่</span>
-                        <span className="text-[8.5px] font-semibold text-slate-800">{todayThai}</span>
+                      {docType === 'delivery_note' && (
+                        <div className="text-[9.5pt] text-slate-800 font-semibold">
+                          อ้างอิงใบรับซ่อม: <span className="font-mono font-bold">{ticket.ticketNumber}</span>
+                        </div>
+                      )}
+                      <div className="text-[9.5pt] text-slate-900 font-medium">
+                        {docType === 'delivery_note' ? `วันที่ส่งมอบ: ${deliveredThaiFull}` : `วันที่: ${todayThaiFull}`}
                       </div>
-                      <div className="px-3 py-0.5 rounded-full border border-slate-800 text-slate-800 text-[8px] font-bold mb-0.5">
-                        สำหรับลูกค้า
-                      </div>
-                      {/* Top Barcode for Document / Ticket Number */}
-                      <div className="mt-0.5 flex flex-col items-end">
-                        <Barcode value={activeDocNo} width={1.15} height={20} displayValue={false} className="h-5" />
-                      </div>
+                      {docType !== 'delivery_note' && ticket.receivedDate && (
+                        <div className="text-[9pt] text-slate-700">
+                          วันที่รับ: {receivedThaiFull}
+                        </div>
+                      )}
                     </div>
                   </div>
 
-                  {/* 2. Document Title Banner */}
-                  <div className="my-1 py-0.5 border-y border-slate-400 bg-slate-100/90 text-center">
-                    <h2 className="text-[11px] font-black tracking-wide text-slate-900 uppercase">
-                      {docType === 'quotation'
-                        ? 'ใบเสนอราคา / ประมาณการค่าใช้จ่าย (QUOTATION)'
-                        : docType === 'invoice'
-                        ? isGovCredit ? 'ใบแจ้งหนี้ / ใบวางบิลงานซ่อมราชการ' : 'ใบแจ้งหนี้ / ใบวางบิล (INVOICE)'
-                        : docType === 'work_order'
-                        ? 'ใบรับเครื่องซ่อม / บัตรส่งซ่อม (WORK ORDER)'
-                        : 'บิลเงินสด / ใบเสร็จรับเงิน'}
+                  {/* 2. DOCUMENT TITLE BANNER */}
+                  <div className="py-1 border-y border-slate-700 bg-slate-100 text-center">
+                    <h2 className="text-[11.5pt] font-extrabold tracking-wide text-slate-950">
+                      {currentDoc.th}
                     </h2>
                   </div>
 
-                  {/* 3. Customer Info & Bank/PromptPay with QR Box */}
-                  <div className="grid grid-cols-12 border border-slate-400 rounded-xs text-[8.5px] leading-tight">
-                    {/* Left: Customer & Device Info (7 cols) */}
-                    <div className="col-span-7 p-1.5 space-y-0.5 border-r border-dotted border-slate-400">
-                      <div className="flex items-start">
-                        <span className="font-bold text-slate-800 w-16 shrink-0">ชื่อลูกค้า:</span>
-                        <span className="font-black text-slate-950 text-[9px] truncate">{ticket.customerName}</span>
+                  {/* 3. CUSTOMER + PAYMENT / PROMPTPAY QR BOX */}
+                  <div className="grid grid-cols-12 border border-slate-500 text-[10pt] leading-snug">
+                    {/* Left: Customer & Primary Device Summary (7 cols) */}
+                    <div className="col-span-7 p-1.5 border-r border-slate-400 space-y-0.5 min-w-0">
+                      <div className="flex items-baseline gap-1">
+                        <span className="font-bold text-slate-900 shrink-0">ลูกค้า:</span>
+                        <span className="font-extrabold text-slate-950 truncate">{ticket.customerName}</span>
                       </div>
-                      <div className="flex items-start">
-                        <span className="font-semibold text-slate-700 w-16 shrink-0">ที่อยู่:</span>
-                        <span className="text-slate-800 truncate">{ticket.customerAddress || '-'}</span>
+                      {ticket.customerAddress && (
+                        <div className="flex items-baseline gap-1">
+                          <span className="font-semibold text-slate-800 shrink-0">ที่อยู่:</span>
+                          <span className="text-slate-900 break-words">{ticket.customerAddress}</span>
+                        </div>
+                      )}
+                      <div className="flex items-baseline gap-1">
+                        <span className="font-semibold text-slate-800 shrink-0">โทร:</span>
+                        <span className="font-semibold text-slate-950">{ticket.customerPhone}</span>
                       </div>
-                      <div className="flex items-center">
-                        <span className="font-semibold text-slate-700 w-16 shrink-0">โทรศัพท์:</span>
-                        <span className="font-medium text-slate-800">{ticket.customerPhone}</span>
-                        {ticket.customerLineId && <span className="ml-2 text-slate-500">LINE: {ticket.customerLineId}</span>}
-                      </div>
-                      <div className="flex items-center">
-                        <span className="font-semibold text-slate-700 w-16 shrink-0">เลขผู้เสียภาษี:</span>
-                        <span className="font-mono text-slate-800">{ticket.govCreditInfo?.taxId || '-'}</span>
-                      </div>
+                      {isGovCredit && ticket.govCreditInfo?.taxId && (
+                        <div className="flex items-baseline gap-1">
+                          <span className="font-semibold text-slate-800 shrink-0">เลขภาษี:</span>
+                          <span className="font-mono text-slate-900">{ticket.govCreditInfo.taxId}</span>
+                        </div>
+                      )}
+                      {dueDateThaiFull && (
+                        <div className="flex items-baseline gap-1">
+                          <span className="font-semibold text-slate-800 shrink-0">ครบกำหนด:</span>
+                          <span className="font-bold text-slate-950">{dueDateThaiFull}</span>
+                        </div>
+                      )}
 
-                      {/* Device & Symptoms info */}
-                      <div className="pt-0.5 mt-0.5 border-t border-slate-200 flex items-start text-[8px]">
-                        <span className="font-bold text-blue-900 w-16 shrink-0">อุปกรณ์:</span>
-                        <span className="text-slate-900 font-semibold truncate">
-                          {DEVICE_LABELS[ticket.deviceType]?.label || ticket.deviceType} {ticket.brand} {ticket.model}
-                          {ticket.serialNumber ? ` (S/N: ${ticket.serialNumber})` : ''}
-                        </span>
-                      </div>
-                      <div className="flex items-start text-[8px]">
-                        <span className="font-bold text-slate-800 w-16 shrink-0">อาการเสีย:</span>
-                        <span className="text-slate-700 truncate">{ticket.problemDescription}</span>
-                      </div>
-                      {ticket.accessories && ticket.accessories.length > 0 && (
-                        <div className="flex items-start text-[7.5px] text-slate-500">
-                          <span className="w-16 shrink-0 font-medium">อุปกรณ์ติดมา:</span>
-                          <span className="truncate">{ticket.accessories.join(', ')}</span>
+                      {/* Single-device summary stays compact right inside customer box */}
+                      {!isMultiDevice && devices[0] && (
+                        <div className="pt-1 mt-1 border-t border-slate-300 space-y-0.5">
+                          <div>
+                            <span className="font-bold text-slate-900">อุปกรณ์: </span>
+                            <span className="font-semibold text-slate-950">
+                              {DEVICE_LABELS[devices[0].deviceType]?.label || devices[0].deviceType} {devices[0].brand} {devices[0].model}
+                              {devices[0].serialNumber ? ` (S/N: ${devices[0].serialNumber})` : ''}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="font-bold text-slate-900">
+                              {docType === 'delivery_note' ? 'สรุปการซ่อม: ' : 'อาการเสีย: '}
+                            </span>
+                            <span className="text-slate-900">
+                              {docType === 'delivery_note'
+                                ? devices[0].technicianNotes || devices[0].problemDescription
+                                : devices[0].problemDescription}
+                            </span>
+                          </div>
+                          {devices[0].accessories && devices[0].accessories.length > 0 && (
+                            <div>
+                              <span className="font-semibold text-slate-800">อุปกรณ์ที่นำมาด้วย: </span>
+                              <span className="text-slate-900">{devices[0].accessories.join(', ')}</span>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
 
-                    {/* Right: Bank Details & PromptPay QR (5 cols) */}
-                    <div className="col-span-5 p-1.5 flex items-center justify-between gap-1.5 bg-slate-50/60">
-                      <div className="space-y-0.5 text-[8px] leading-tight">
-                        <p className="font-bold text-slate-900">
-                          บัญชีธนาคาร <span className="font-normal">{shopSettings.bankName || 'กสิกรไทย'}</span>
+                    {/* Right: Payment Channel & PromptPay QR (5 cols) */}
+                    <div className="col-span-5 p-1.5 flex items-center justify-between gap-1.5 bg-slate-50/70 min-w-0">
+                      <div className="space-y-0.5 text-[9.5pt] leading-snug min-w-0">
+                        <p className="font-bold text-slate-950">
+                          ธนาคาร{shopSettings.bankName || 'กสิกรไทย'}
                         </p>
-                        <p className="font-bold text-slate-900">
-                          ชื่อบัญชี <span className="font-normal">{shopSettings.bankAccountName || shopSettings.shopName}</span>
+                        <p className="text-slate-900 break-words">
+                          {shopSettings.bankAccountName || shopSettings.shopName}
                         </p>
                         {shopSettings.bankAccountNumber && (
-                          <p className="font-mono text-slate-700 text-[7.5px]">เลขที่: {shopSettings.bankAccountNumber}</p>
+                          <p className="font-mono font-semibold text-slate-900">
+                            {shopSettings.bankAccountNumber}
+                          </p>
                         )}
-                        <p className="font-bold text-slate-900 pt-0.5">
-                          พร้อมเพย์ <span className="font-mono font-bold text-blue-900 text-[8.5px]">{shopSettings.promptPayId || '0834268058'}</span>
+                        <p className="font-bold text-slate-950">
+                          พร้อมเพย์ {shopSettings.promptPayId || '0834268058'}
                         </p>
-                        <div className="pt-0.5">
-                          <span className={`inline-block px-1 py-0.2 rounded font-bold text-[7px] ${
-                            ticket.isPaid
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : isGovCredit
-                              ? 'bg-purple-100 text-purple-800'
-                              : 'bg-blue-100 text-blue-800'
-                          }`}>
-                            {ticket.isPaid ? '✓ ชำระเงินเรียบร้อย' : isGovCredit ? 'เครดิตราชการ' : 'สแกนชำระเงิน'}
-                          </span>
-                        </div>
+                        <p className="font-bold text-slate-950 pt-0.5">
+                          {ticket.isPaid ? 'ชำระเงินแล้ว' : isGovCredit ? 'เครดิตราชการ' : 'รอชำระเงิน'}
+                        </p>
                       </div>
 
-                      {/* PromptPay QR Code (No size text or parentheses in label) */}
                       {promptPayQrUrl && (
                         <div className="shrink-0 flex flex-col items-center">
-                          <div className="w-[30mm] h-[30mm] p-0.5 bg-white border border-slate-300 rounded-xs shadow-2xs flex items-center justify-center">
+                          <div className="w-[24mm] h-[24mm] p-0.5 bg-white border border-slate-400 flex items-center justify-center">
                             <img
                               src={promptPayQrUrl}
-                              alt="PromptPay QR Code"
+                              alt="PromptPay QR"
                               className="w-full h-full object-contain"
                             />
                           </div>
-                          <span className="text-[7.5px] text-slate-700 font-bold mt-0.5">พร้อมเพย์</span>
+                          <span className="text-[9pt] text-slate-900 font-bold mt-0.5">พร้อมเพย์</span>
                         </div>
                       )}
                     </div>
                   </div>
 
-                  {/* 4. Items Table (Full-sheet, zero wasted gaps) */}
-                  <div className="border border-slate-400 rounded-xs overflow-hidden text-[8.5px] my-1">
+                  {/* Multi-Device Summary List (when 1 ticket has N > 1 devices) */}
+                  {isMultiDevice && (
+                    <div className="border border-slate-500 text-[9.5pt]">
+                      <div className="bg-slate-100 px-2 py-0.5 font-extrabold text-slate-950 border-b border-slate-400">
+                        รายการอุปกรณ์ที่{docType === 'delivery_note' ? 'ส่งมอบคืน' : 'ส่งซ่อม'} ({devices.length} เครื่อง)
+                      </div>
+                      <div className="divide-y divide-slate-300">
+                        {devices.map((dev, idx) => (
+                          <div key={dev.id || idx} className="px-2 py-1 leading-snug">
+                            <div className="font-bold text-slate-950">
+                              {idx + 1}. {DEVICE_LABELS[dev.deviceType]?.label || dev.deviceType} {dev.brand} {dev.model}
+                              {dev.serialNumber ? ` | S/N: ${dev.serialNumber}` : ''}
+                            </div>
+                            <div className="text-slate-900">
+                              {docType === 'delivery_note'
+                                ? `ผลการซ่อม: ${dev.technicianNotes || dev.problemDescription}`
+                                : `อาการเสีย: ${dev.problemDescription}`}
+                              {dev.accessories && dev.accessories.length > 0
+                                ? ` | อุปกรณ์ติดมา: ${dev.accessories.join(', ')}`
+                                : ''}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 4. ITEMS & AMOUNT TABLE (NO '฿' SYMBOL ANYWHERE) */}
+                  <div className="border border-slate-500 text-[10pt]">
                     <table className="w-full text-left border-collapse">
-                      <thead className="bg-slate-200/90 text-slate-900 font-bold border-b border-slate-400 text-[8.5px]">
+                      <thead className="bg-slate-200 text-slate-950 font-extrabold border-b border-slate-500">
                         <tr>
-                          <th className="py-0.5 px-1 w-7 text-center border-r border-dotted border-slate-400">ลำดับที่</th>
-                          <th className="py-0.5 px-1.5 border-r border-dotted border-slate-400">รายการ</th>
-                          <th className="py-0.5 px-1 w-12 text-center border-r border-dotted border-slate-400">จำนวน</th>
-                          <th className="py-0.5 px-1 w-11 text-center border-r border-dotted border-slate-400">หน่วยนับ</th>
-                          <th className="py-0.5 px-1 w-16 text-right border-r border-dotted border-slate-400">ราคาต่อหน่วย</th>
-                          <th className="py-0.5 px-1.5 w-18 text-right">หลังหักส่วนลด</th>
+                          <th className="py-1 px-1 w-[8%] text-center border-r border-slate-400">ที่</th>
+                          <th className="py-1 px-1.5 w-[44%] border-r border-slate-400">รายการ</th>
+                          <th className="py-1 px-1 w-[10%] text-center border-r border-slate-400">จำนวน</th>
+                          <th className="py-1 px-1 w-[10%] text-center border-r border-slate-400">หน่วย</th>
+                          <th className="py-1 px-1.5 w-[14%] text-right border-r border-slate-400">ราคา</th>
+                          <th className="py-1 px-1.5 w-[14%] text-right">รวม (บาท)</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-200">
-                        {/* Service / Labor Fee */}
-                        <tr>
-                          <td className="py-0.5 px-1 text-center text-slate-500 border-r border-dotted border-slate-300">1</td>
-                          <td className="py-0.5 px-1.5 font-medium border-r border-dotted border-slate-300">
-                            ค่าบริการตรวจเช็คและค่าแรงซ่อมบำรุง
-                          </td>
-                          <td className="py-0.5 px-1 text-center border-r border-dotted border-slate-300">1.00</td>
-                          <td className="py-0.5 px-1 text-center border-r border-dotted border-slate-300">งาน/เครื่อง</td>
-                          <td className="py-0.5 px-1 text-right font-mono border-r border-dotted border-slate-300">
-                            ฿{(ticket.laborCost || 0).toLocaleString('th-TH', { minimumFractionDigits: 2 })}
-                          </td>
-                          <td className="py-0.5 px-1.5 text-right font-mono font-semibold">
-                            ฿{(ticket.laborCost || 0).toLocaleString('th-TH', { minimumFractionDigits: 2 })}
-                          </td>
-                        </tr>
-
-                        {/* Parts Used */}
-                        {ticket.partsUsed?.map((part, idx) => (
-                          <tr key={idx}>
-                            <td className="py-0.5 px-1 text-center text-slate-500 border-r border-dotted border-slate-300">{idx + 2}</td>
-                            <td className="py-0.5 px-1.5 font-medium border-r border-dotted border-slate-300 truncate max-w-[200px]">
-                              {part.itemName} {part.itemCode && <span className="font-mono text-slate-400 text-[7px]">({part.itemCode})</span>}
+                      <tbody className="divide-y divide-slate-300">
+                        {lineItems.map((row, idx) => (
+                          <tr key={idx} className="a5-keep-together">
+                            <td className="py-1 px-1 text-center border-r border-slate-300">{idx + 1}</td>
+                            <td className="py-1 px-1.5 border-r border-slate-300 break-words font-medium text-slate-950">
+                              {row.description}
                             </td>
-                            <td className="py-0.5 px-1 text-center border-r border-dotted border-slate-300">
-                              {Number(part.quantity || 1).toFixed(2)}
+                            <td className="py-1 px-1 text-center border-r border-slate-300 tabular-nums">
+                              {row.qty}
                             </td>
-                            <td className="py-0.5 px-1 text-center border-r border-dotted border-slate-300">ชิ้น</td>
-                            <td className="py-0.5 px-1 text-right font-mono border-r border-dotted border-slate-300">
-                              ฿{Number(part.unitPrice || 0).toLocaleString('th-TH', { minimumFractionDigits: 2 })}
+                            <td className="py-1 px-1 text-center border-r border-slate-300">
+                              {row.unit}
                             </td>
-                            <td className="py-0.5 px-1.5 text-right font-mono font-semibold">
-                              ฿{Number(part.totalPrice || 0).toLocaleString('th-TH', { minimumFractionDigits: 2 })}
+                            <td className="py-1 px-1.5 text-right border-r border-slate-300 tabular-nums">
+                              {formatMoneyPlain(row.unitPrice, 2)}
+                            </td>
+                            <td className="py-1 px-1.5 text-right font-bold text-slate-950 tabular-nums">
+                              {formatMoneyPlain(row.total, 2)}
                             </td>
                           </tr>
                         ))}
@@ -525,195 +623,129 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
                     </table>
                   </div>
 
-                  {/* 5. Totals & Notes Section */}
-                  <div className="grid grid-cols-12 gap-1.5 text-[8.5px]">
-                    {/* Left: Remarks & Baht text bar */}
-                    <div className="col-span-7 flex flex-col justify-between">
-                      <div className="space-y-0.2">
-                        <p className="font-bold text-slate-800">
-                          หมายเหตุ: <span className="font-normal text-slate-700">{ticket.technicianNotes || 'ตรวจเช็คและซ่อมบำรุงตามมาตรฐาน'}</span>
-                        </p>
+                  {/* 5. TOTALS & REMARKS (NO '฿' SYMBOL) */}
+                  <div className="grid grid-cols-12 gap-2 text-[10pt] a5-keep-together">
+                    <div className="col-span-7 flex flex-col justify-between gap-1">
+                      <div className="text-slate-900">
+                        <span className="font-bold">สรุปรายการ / บันทึกช่าง: </span>
+                        <span>{ticket.technicianNotes || 'ตรวจเช็คและดำเนินการซ่อมตามมาตรฐาน'}</span>
                       </div>
-
-                      {/* Shaded bar with Thai Baht text */}
-                      <div className="p-1 rounded bg-slate-200/80 border border-slate-300 text-center font-bold text-[9px] text-slate-900 mt-1">
+                      <div className="p-1.5 bg-slate-100 border border-slate-400 text-center font-bold text-slate-950">
                         ตัวอักษร: ( {totalInBahtText} )
                       </div>
                     </div>
 
-                    {/* Right: Calculations */}
-                    <div className="col-span-5 space-y-0.2 border border-slate-300 rounded p-1 bg-slate-50/50">
-                      <div className="flex justify-between text-slate-700">
-                        <span>รวม</span>
-                        <span className="font-mono">฿{((ticket.laborCost || 0) + (ticket.partsCost || 0)).toLocaleString('th-TH', { minimumFractionDigits: 2 })}</span>
+                    <div className="col-span-5 border border-slate-500 p-1.5 bg-slate-50 space-y-0.5 tabular-nums">
+                      <div className="flex justify-between text-slate-900">
+                        <span>รวมเป็นเงิน</span>
+                        <span>{formatMoneyPlain(subtotalBeforeDiscount, 2)}</span>
                       </div>
-                      <div className="flex justify-between text-rose-600 font-bold">
-                        <span>ส่วนลดการค้า</span>
-                        <span className="font-mono">{Number(ticket.discount || 0) > 0 ? `-฿${Number(ticket.discount).toLocaleString('th-TH', { minimumFractionDigits: 2 })}` : '0.00'}</span>
-                      </div>
-                      <div className="flex justify-between text-slate-700">
-                        <span>มูลค่าสินค้า</span>
-                        <span className="font-mono">฿{(ticket.totalAmount || 0).toLocaleString('th-TH', { minimumFractionDigits: 2 })}</span>
-                      </div>
-                      <div className="flex justify-between text-slate-700">
-                        <span>ภาษีมูลค่าเพิ่ม</span>
-                        <span className="font-mono">0.00</span>
-                      </div>
-                      <div className="flex justify-between items-baseline font-black text-[9.5px] text-slate-950 pt-0.5 border-t-2 border-slate-800">
-                        <span>{docType === 'quotation' || docType === 'work_order' ? 'ราคาประเมินเบื้องต้น' : 'รวมสุทธิ'}</span>
-                        <span className="font-mono text-[11.5px] font-black text-blue-900">
-                          ฿{(ticket.totalAmount || 0).toLocaleString('th-TH', { minimumFractionDigits: 2 })}
+                      {discountValue > 0 && (
+                        <div className="flex justify-between text-rose-700 font-bold">
+                          <span>ส่วนลด</span>
+                          <span>-{formatMoneyPlain(discountValue, 2)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between items-baseline font-extrabold text-[11pt] text-slate-950 pt-1 border-t-2 border-slate-800">
+                        <span>
+                          {docType === 'quotation' || docType === 'work_order'
+                            ? 'ราคาประเมิน (บาท)'
+                            : 'ยอดสุทธิ (บาท)'}
                         </span>
+                        <span className="text-[12pt]">{formatMoneyPlain(totalAmountValue, 2)}</span>
                       </div>
                     </div>
                   </div>
 
-                  {/* 6. Warranty Terms & Status Tracking QR Code */}
-                  <div className="border border-slate-300 rounded p-1.5 bg-slate-50/60 text-[8px] leading-tight my-0.5 flex items-center justify-between gap-2">
-                    <div className="flex-1 space-y-0.5">
-                      <div className="flex items-center justify-between font-bold text-slate-900 border-b border-slate-200 pb-0.5">
-                        <span className="font-extrabold text-[8px] text-slate-950">เงื่อนไขการรับประกัน:</span>
-                        <span className="text-blue-900 font-bold">
-                          🛡️ รับประกัน {(ticket.warrantyDays ?? 30) > 0 ? `${ticket.warrantyDays ?? 30} วัน` : 'ไม่มีประกัน'}
-                          {ticket.warrantyExpiryDate && (ticket.warrantyDays ?? 30) > 0 ? ` (ถึง: ${ticket.warrantyExpiryDate})` : ''}
+                  {/* 6. WARRANTY TERMS & TRACKING QR CODE */}
+                  <div className="border border-slate-500 p-1.5 bg-slate-50/70 text-[9.5pt] leading-snug flex items-center justify-between gap-2 a5-keep-together">
+                    <div className="flex-1 space-y-0.5 min-w-0">
+                      <div className="flex items-center justify-between gap-2 font-bold text-slate-950 border-b border-slate-300 pb-0.5 flex-wrap">
+                        <span>เงื่อนไขการรับประกัน:</span>
+                        <span>
+                          {warrantyDays > 0
+                            ? `รับประกัน ${warrantyDays} วัน${warrantyExpiryThaiFull ? ` (ถึง ${warrantyExpiryThaiFull})` : ''}`
+                            : 'ไม่มีการรับประกัน'}
                         </span>
                       </div>
-                      <p className="text-slate-800">1. การรับประกันการซ่อมสินค้าจะมีผลเมื่อมีเอกสารฉบับนี้มายืนยันกับทางร้านเท่านั้น</p>
-                      <p className="text-slate-800">2. เมื่อสินค้าได้รับการซ่อมหรือแก้ไขโดยมิใช่การดำเนินการของทางร้าน ถือว่าการรับประกันสิ้นสุดทันที</p>
-                      <p className="text-slate-800">3. ไม่รับประกันกรณีมีการใช้งานผิดประเภท</p>
+                      <p className="text-slate-900">1. การรับประกันมีผลเมื่อนำเอกสารฉบับนี้มายืนยันกับทางร้านเท่านั้น</p>
+                      <p className="text-slate-900">2. หากเครื่องถูกซ่อมหรือแก้ไขจากภายนอก การรับประกันสิ้นสุดทันที</p>
+                      <p className="text-slate-900">3. ไม่รับประกันกรณีใช้งานผิดประเภท ตกหล่น หรือโดนความชื้น</p>
                     </div>
 
-                    {/* Status Tracking QR: Exactly labeled เช็คสถานะซ่อม (no size or parentheses) */}
                     {qrCodeDataUrl && (
-                      <div className="shrink-0 flex flex-col items-center pl-2 border-l border-slate-300">
-                        <div className="w-[20mm] h-[20mm] p-0.5 bg-white border border-slate-300 rounded-xs shadow-2xs flex items-center justify-center">
+                      <div className="shrink-0 flex flex-col items-center pl-2 border-l border-slate-400">
+                        <div className="w-[20mm] h-[20mm] p-0.5 bg-white border border-slate-400 flex items-center justify-center">
                           <img
                             src={qrCodeDataUrl}
-                            alt="Status Tracking QR"
+                            alt="Tracking QR"
                             className="w-full h-full object-contain"
                           />
                         </div>
-                        <span className="text-[7.5px] text-blue-900 font-bold mt-0.5 whitespace-nowrap">เช็คสถานะซ่อม</span>
+                        <span className="text-[9pt] text-slate-950 font-bold mt-0.5 whitespace-nowrap">
+                          เช็คสถานะซ่อม
+                        </span>
                       </div>
                     )}
                   </div>
+                </div>
 
-                  {/* 7. Signatures: Enlarged spacious signing boxes */}
+                {/* ================= BOTTOM SECTION: ENLARGED SIGNATURES + CLEAN STUB ================= */}
+                <div className="mt-auto pt-2 space-y-2 a5-keep-together">
+                  {/* 7. SIGNATURES: Spacious, NO "ลงลายมือชื่อ", NO small helper text */}
                   {docType === 'quotation' ? (
-                    <div className="my-1 pt-0.5 border-t border-slate-300">
-                      <div className="grid grid-cols-2 gap-3 text-center text-[8px]">
-                        <div className="border border-slate-300 rounded p-1.5 bg-slate-50/60 flex flex-col justify-between min-h-[54px]">
-                          <p className="font-bold text-blue-900 text-[8.5px]">ผู้เสนอราคา (ทางร้าน)</p>
-                          <div className="py-2">
-                            <div className="border-b border-dotted border-slate-400 w-44 mx-auto"></div>
-                          </div>
-                          <div>
-                            <p className="text-[8px] text-slate-800 font-medium">( {shopSettings.shopName} )</p>
-                            <p className="text-[7px] text-slate-500 mt-0.5">วันที่ ...... / ...... / ..........</p>
-                          </div>
-                        </div>
-
-                        <div className="border border-blue-300 rounded p-1.5 bg-blue-50/50 flex flex-col justify-between min-h-[54px]">
-                          <p className="font-bold text-blue-950 text-[8.5px]">[ &nbsp; ] ผู้อนุมัติสั่งจ้าง / ขออนุมัติงบประมาณ</p>
-                          <div className="py-2">
-                            <div className="border-b border-dotted border-slate-400 w-44 mx-auto"></div>
-                          </div>
-                          <div>
-                            <p className="text-[8px] text-slate-800 font-medium">( ................................................................ )</p>
-                            <p className="text-[7px] text-slate-500 mt-0.5">หัวหน้าหน่วยงาน / เจ้าหน้าที่พัสดุ</p>
-                          </div>
-                        </div>
+                    <div className="grid grid-cols-2 gap-3 text-center text-[10pt]">
+                      <div className="border border-slate-500 p-2 flex flex-col justify-between min-h-[82px]">
+                        <p className="font-bold text-slate-950">ผู้เสนอราคา</p>
+                        <div className="flex-1" />
+                        <p className="font-bold text-slate-950">( ร้านพัทลุงปริ้นเตอร์ )</p>
+                      </div>
+                      <div className="border border-slate-500 p-2 flex flex-col justify-between min-h-[82px]">
+                        <p className="font-bold text-slate-950">ผู้อนุมัติ / ลูกค้า</p>
+                        <div className="flex-1" />
+                        <p className="font-bold text-slate-950">( {ticket.customerName} )</p>
                       </div>
                     </div>
                   ) : (
-                    <div className="my-1 pt-0.5 border-t border-slate-300">
-                      <div className="grid grid-cols-2 gap-3 text-center text-[8px]">
-                        {/* Customer Signature Box - Enlarged */}
-                        <div className="border border-slate-300 rounded p-1.5 bg-slate-50/60 flex flex-col justify-between min-h-[54px]">
-                          <p className="font-bold text-slate-900 text-[8.5px]">ผู้รับสินค้า / ลูกค้า (ลงลายมือชื่อ)</p>
-                          <div className="py-2">
-                            <div className="border-b border-dotted border-slate-400 w-44 mx-auto"></div>
-                          </div>
-                          <div>
-                            <p className="text-[8px] text-slate-800 font-bold">( {ticket.customerName || '................................................'} )</p>
-                            <p className="text-[7px] text-slate-500 mt-0.5">วันที่ ...... / ...... / ..........</p>
-                          </div>
-                        </div>
-
-                        {/* Shop / Technician Signature Box - Enlarged */}
-                        <div className="border border-slate-300 rounded p-1.5 bg-slate-50/60 flex flex-col justify-between min-h-[54px]">
-                          <p className="font-bold text-slate-900 text-[8.5px]">ผู้รับเงิน / ผู้ส่งมอบงาน</p>
-                          <div className="py-2">
-                            <div className="border-b border-dotted border-slate-400 w-44 mx-auto"></div>
-                          </div>
-                          <div>
-                            <p className="text-[8px] text-slate-800 font-bold">( {ticket.technicianName || shopSettings.shopName} )</p>
-                            <p className="text-[7px] text-slate-500 mt-0.5">วันที่ ...... / ...... / ..........</p>
-                          </div>
-                        </div>
+                    <div className="grid grid-cols-2 gap-3 text-center text-[10pt]">
+                      <div className="border border-slate-500 p-2 flex flex-col justify-between min-h-[84px]">
+                        <p className="font-bold text-slate-950">
+                          {docType === 'delivery_note' ? 'ผู้รับมอบสินค้า / ลูกค้า' : 'ผู้รับสินค้า / ลูกค้า'}
+                        </p>
+                        <div className="flex-1" />
+                        <p className="font-bold text-slate-950">( {ticket.customerName} )</p>
                       </div>
-                      <p className="text-[6.5px] text-slate-500 text-center mt-0.5">
-                        * ได้รับสินค้าตามรายการข้างต้นในสภาพที่เรียบร้อยและถูกต้องสมบูรณ์แล้ว
-                      </p>
+
+                      <div className="border border-slate-500 p-2 flex flex-col justify-between min-h-[84px]">
+                        <p className="font-bold text-slate-950">
+                          {docType === 'delivery_note' ? 'ผู้ส่งมอบสินค้า' : 'ผู้รับเงิน / ช่างผู้รับผิดชอบ'}
+                        </p>
+                        <div className="flex-1" />
+                        <p className="font-bold text-slate-950">( ร้านพัทลุงปริ้นเตอร์ )</p>
+                      </div>
                     </div>
                   )}
-                </div>
 
-                {/* ================= TEAR-OFF CUSTOMER STUB (ส่วนท้ายใบเสร็จสำหรับตัด) ================= */}
-                <div className="mt-1 pt-0.5">
-                  {/* Perforated Cutting Line */}
-                  <div className="relative my-1 text-center border-t-2 border-dashed border-slate-400">
-                    <span className="absolute left-1/2 -top-2 -translate-x-1/2 bg-white px-2 text-[7px] font-bold text-slate-600 flex items-center gap-1 shadow-2xs">
-                      <Scissors className="w-2.5 h-2.5 text-slate-700 inline" />
-                      <span>ตัดตามรอยประ (หางบัตรสำหรับลูกค้า / บัตรรับเครื่อง / ส่วนรับประกัน)</span>
-                    </span>
-                  </div>
-
-                  {/* Customer Claim Stub Box */}
-                  <div className="border border-slate-400 rounded-xs p-1.5 bg-slate-50/80 text-[8px] leading-tight space-y-0.5">
-                    <div className="flex justify-between items-center border-b border-slate-300 pb-0.5">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-black text-[9px] text-slate-900">{shopSettings.shopName}</span>
-                        <span className="text-[7.5px] text-slate-600">โทร. {shopSettings.shopPhone}</span>
-                      </div>
-                      <span className="px-1.5 py-0.2 rounded bg-blue-100 text-blue-900 font-bold text-[7px]">
-                        หางบัตรรับเครื่อง & รับประกัน (Customer Stub)
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-12 gap-1 items-center">
-                      {/* Left: Doc No, Enlarged Barcode (~2x bigger for handheld scanners), Customer, Device (7 cols) */}
-                      <div className="col-span-7 space-y-0.5">
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-bold text-slate-900 text-[8.5px]">เลขที่: <span className="font-mono font-black">{activeDocNo}</span></span>
+                  {/* 8. TEAR-OFF STUB: ONLY Doc No, Barcode, Customer Name */}
+                  <div className="pt-1.5 border-t-2 border-dashed border-slate-500">
+                    <div className="border border-slate-500 px-3 py-2 flex items-center justify-between gap-3">
+                      <div className="space-y-1 min-w-0">
+                        <div className="text-[10.5pt] font-extrabold text-slate-950">
+                          เลขที่เอกสาร: <span className="font-mono">{activeDocNo}</span>
                         </div>
-                        {/* Barcode enlarged ~2x (height 28px vs 14px, width 1.35 vs 0.85) */}
-                        <div className="py-0.5 px-1 bg-white rounded-xs border border-slate-300 inline-block">
-                          <Barcode value={activeDocNo} width={1.35} height={28} displayValue={false} className="h-7 max-w-full inline-block" />
+                        <div className="text-[10.5pt] font-bold text-slate-950 truncate">
+                          ชื่อลูกค้า: {ticket.customerName}
                         </div>
-                        <p className="truncate text-[8.5px]"><span className="font-semibold text-slate-700">ลูกค้า:</span> <span className="font-bold">{ticket.customerName}</span> (โทร. {ticket.customerPhone})</p>
-                        <p className="truncate text-[8.5px]"><span className="font-semibold text-slate-700">อุปกรณ์:</span> {ticket.brand} {ticket.model} {ticket.serialNumber ? `(S/N: ${ticket.serialNumber})` : ''}</p>
-                        <p className="truncate text-[8px] text-slate-600"><span className="font-semibold text-slate-700">อาการ:</span> {ticket.problemDescription}</p>
                       </div>
-
-                      {/* Right: Amount, Warranty, Status (5 cols) */}
-                      <div className="col-span-5 pl-2 border-l border-slate-300 space-y-0.5">
-                        <p className="font-bold text-slate-900 text-[8.5px]">
-                          {docType === 'quotation' || docType === 'work_order' ? 'ราคาประเมินเบื้องต้น:' : 'ยอดสุทธิ:'}{' '}
-                          <span className="text-blue-900 font-mono font-bold text-[9.5px]">฿{(ticket.totalAmount || 0).toLocaleString()}</span>
-                        </p>
-                        <p className="text-emerald-800 font-bold text-[8px]">{ticket.isPaid ? '✓ ชำระแล้ว' : 'รอชำระเงิน'}</p>
-                        <p className="text-slate-700 text-[7.5px]">
-                          ประกัน: <span className="font-semibold text-blue-900">{(ticket.warrantyDays ?? 30) > 0 ? `${ticket.warrantyDays ?? 30} วัน` : 'ไม่มี'}</span>
-                        </p>
-                        <p className="text-[7px] text-slate-500">วันที่: {todayThai}</p>
-                        <p className="text-[7px] text-slate-500 truncate">ช่าง/ผู้รับเครื่อง: {ticket.technicianName || shopSettings.shopName}</p>
+                      <div className="shrink-0 bg-white px-1">
+                        <Barcode
+                          value={activeDocNo}
+                          width={1.35}
+                          height={34}
+                          displayValue={false}
+                          className="h-[34px] max-w-[200px]"
+                        />
                       </div>
-                    </div>
-
-                    <div className="flex justify-between items-center text-[7px] text-slate-500 pt-0.5 border-t border-slate-200">
-                      <span>* กรุณานำหางบัตรนี้มาแสดงเพื่อติดต่อรับเครื่องหรือรับบริการประกันงานซ่อม</span>
-                      <span>{shopSettings.shopName}</span>
                     </div>
                   </div>
                 </div>
@@ -723,9 +755,9 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
             /* ================= 80MM POS THERMAL SLIP ================= */
             <div
               id="printable-receipt-slip"
-              className="bg-white text-slate-900 w-[80mm] p-3 rounded-xl shadow-lg border border-slate-200 font-mono text-[11px] print:shadow-none print:border-none print:w-full print:p-1"
+              className="bg-white text-slate-950 w-[80mm] p-3 rounded-xl shadow-lg border border-slate-200 text-[10pt] leading-snug print:shadow-none print:border-none print:w-full print:p-1"
             >
-              <div className="text-center pb-2 border-b border-dashed border-slate-400">
+              <div className="text-center pb-2 border-b border-dashed border-slate-500">
                 {shopSettings.logoUrl && (
                   <img
                     src={shopSettings.logoUrl}
@@ -733,86 +765,69 @@ export const PrintReceiptModal: React.FC<PrintReceiptModalProps> = ({
                     className="h-10 w-auto object-contain mx-auto mb-1"
                   />
                 )}
-                <h1 className="font-bold text-xs">{shopSettings.shopName}</h1>
-                <p className="text-[9px] text-slate-600 mt-0.5">{shopSettings.shopAddress}</p>
-                <p className="text-[9px] text-slate-600">โทร {shopSettings.shopPhone} | LINE: {shopSettings.shopLineId}</p>
-                <p className="font-bold text-xs mt-1">
-                  {currentDoc.th}
-                </p>
-                <p className="font-bold text-sm text-blue-800">{activeDocNo}</p>
-                <p className="text-[9px] text-slate-500">วันที่: {todayThai}</p>
+                <h1 className="font-bold text-[11pt]">{shopSettings.shopName}</h1>
+                <p className="text-[9.5pt] text-slate-800">{shopSettings.shopAddress}</p>
+                <p className="text-[9.5pt] text-slate-900">โทร {shopSettings.shopPhone}</p>
+                <p className="font-bold text-[10.5pt] mt-1">{currentDoc.th}</p>
+                <p className="font-mono font-bold text-[10.5pt]">{activeDocNo}</p>
+                <p className="text-[9.5pt] text-slate-800">วันที่: {todayThaiFull}</p>
               </div>
 
-              <div className="py-2 border-b border-dashed border-slate-400 text-[10px] space-y-1">
+              <div className="py-2 border-b border-dashed border-slate-500 space-y-0.5 text-[10pt]">
                 <p><span className="font-bold">ลูกค้า:</span> {ticket.customerName}</p>
                 <p><span className="font-bold">โทร:</span> {ticket.customerPhone}</p>
-                {isGovCredit && ticket.govCreditInfo && (
-                  <>
-                    <p><span className="font-bold">หน่วยงาน:</span> {ticket.govCreditInfo.agencyName}</p>
-                    {ticket.govCreditInfo.taxId && <p><span className="font-bold">เลขผู้เสียภาษี:</span> {ticket.govCreditInfo.taxId}</p>}
-                    {ticket.govCreditInfo.disbursementNumber && (
-                      <p><span className="font-bold">เลขที่ฎีกา:</span> {ticket.govCreditInfo.disbursementNumber}</p>
-                    )}
-                  </>
-                )}
-                <p><span className="font-bold">อุปกรณ์:</span> {ticket.brand} {ticket.model}</p>
-                {ticket.serialNumber && <p><span className="font-bold">S/N:</span> {ticket.serialNumber}</p>}
-                <p><span className="font-bold">อุปกรณ์ติดมา:</span> {ticket.accessories?.join(', ') || '-'}</p>
-                <p><span className="font-bold">อาการเสีย:</span> {ticket.problemDescription}</p>
-                <p><span className="font-bold">🛡️ ประกัน:</span> {(ticket.warrantyDays ?? 30) > 0 ? `รับประกัน ${ticket.warrantyDays ?? 30} วัน ${ticket.warrantyExpiryDate ? `(ถึง ${ticket.warrantyExpiryDate})` : ''}` : 'ไม่มีประกัน'}</p>
-                {ticket.isWarrantyClaim && <p className="text-purple-700 font-bold">* งานเคลมประกันต่อเนื่อง (ฟรีค่าแรง)</p>}
-              </div>
-
-              <div className="py-2 border-b border-dashed border-slate-400 text-[10px] space-y-1">
-                <div className="flex justify-between">
-                  <span>ค่าบริการ/แรง:</span>
-                  <span>฿{(ticket.laborCost || 0).toLocaleString()}</span>
-                </div>
-                {ticket.partsUsed?.map((p, i) => (
-                  <div key={i} className="flex justify-between">
-                    <span className="truncate max-w-[130px]">{p.itemName}:</span>
-                    <span>฿{(p.totalPrice || 0).toLocaleString()}</span>
+                {devices.map((dev, idx) => (
+                  <div key={dev.id || idx} className="pt-0.5">
+                    <p>
+                      <span className="font-bold">{isMultiDevice ? `เครื่อง ${idx + 1}:` : 'อุปกรณ์:'}</span> {dev.brand} {dev.model}
+                      {dev.serialNumber ? ` (S/N: ${dev.serialNumber})` : ''}
+                    </p>
+                    <p><span className="font-bold">อาการ:</span> {dev.problemDescription}</p>
                   </div>
                 ))}
-                {(Number(ticket.discount) || 0) > 0 && (
-                  <>
-                    <div className="flex justify-between text-slate-500 pt-1 border-t border-dotted border-slate-300 text-[9px]">
-                      <span>รวมก่อนลด:</span>
-                      <span>฿{((ticket.laborCost || 0) + (ticket.partsCost || 0)).toLocaleString()}</span>
-                    </div>
-                    <div className="flex justify-between text-rose-600 font-bold">
-                      <span>ส่วนลด:</span>
-                      <span>-฿{(Number(ticket.discount) || 0).toLocaleString()}</span>
-                    </div>
-                  </>
+                <p>
+                  <span className="font-bold">ประกัน:</span>{' '}
+                  {warrantyDays > 0
+                    ? `${warrantyDays} วัน${warrantyExpiryThaiFull ? ` (ถึง ${warrantyExpiryThaiFull})` : ''}`
+                    : 'ไม่มีประกัน'}
+                </p>
+                <p><span className="font-bold">ผู้รับผิดชอบ:</span> ร้านพัทลุงปริ้นเตอร์</p>
+              </div>
+
+              <div className="py-2 border-b border-dashed border-slate-500 space-y-1 text-[10pt] tabular-nums">
+                {lineItems.map((row, i) => (
+                  <div key={i} className="flex justify-between gap-2">
+                    <span className="truncate">{row.description}</span>
+                    <span className="shrink-0">{formatMoneyPlain(row.total, 2)}</span>
+                  </div>
+                ))}
+                {discountValue > 0 && (
+                  <div className="flex justify-between text-rose-700 font-bold">
+                    <span>ส่วนลด</span>
+                    <span>-{formatMoneyPlain(discountValue, 2)}</span>
+                  </div>
                 )}
-                <div className="flex justify-between font-bold text-xs pt-1 border-t border-slate-300">
-                  <span>{docType === 'quotation' || docType === 'work_order' ? 'ราคาประเมินเบื้องต้น:' : 'ยอดสุทธิ:'}</span>
-                  <span>฿{(ticket.totalAmount || 0).toLocaleString()}</span>
+                <div className="flex justify-between font-extrabold text-[11pt] pt-1 border-t border-slate-400">
+                  <span>
+                    {docType === 'quotation' || docType === 'work_order' ? 'ราคาประเมิน (บาท)' : 'ยอดสุทธิ (บาท)'}
+                  </span>
+                  <span>{formatMoneyPlain(totalAmountValue, 2)}</span>
                 </div>
               </div>
 
-              {/* PromptPay QR Code on Slip */}
               {promptPayQrUrl && (
-                <div className="py-2 text-center flex flex-col items-center border-b border-dashed border-slate-400">
-                  <img src={promptPayQrUrl} alt="PromptPay QR Code" className="w-24 h-24 mx-auto" />
-                  <p className="text-[9px] font-bold mt-1 text-[#002D62]">สแกนชำระพร้อมเพย์</p>
-                  <p className="text-[8px] text-slate-500">{shopSettings.promptPayId || '083-426-8058'}</p>
+                <div className="py-2 text-center flex flex-col items-center border-b border-dashed border-slate-500">
+                  <img src={promptPayQrUrl} alt="PromptPay QR" className="w-24 h-24 mx-auto" />
+                  <p className="text-[9.5pt] font-bold mt-1">พร้อมเพย์ {shopSettings.promptPayId || '0834268058'}</p>
                 </div>
               )}
 
-              {/* Status Tracking QR Code on Slip */}
-              <div className="py-2 text-center flex flex-col items-center">
-                {qrCodeDataUrl && (
-                  <img src={qrCodeDataUrl} alt="QR Code" className="w-20 h-20 mx-auto" />
-                )}
-                <p className="text-[8px] font-bold mt-1 text-slate-700">สแกนตรวจเช็คสถานะงานซ่อม</p>
-              </div>
-
-              <div className="text-[8px] text-center text-slate-500 border-t border-dashed border-slate-400 pt-1.5">
-                <p>{shopSettings.receiptFooterMessage || 'ขอบคุณที่ใช้บริการ'}</p>
-                <p className="mt-0.5">โปรดนำสลิปนี้มาแสดงเมื่อมารับเครื่อง</p>
-              </div>
+              {qrCodeDataUrl && (
+                <div className="py-2 text-center flex flex-col items-center">
+                  <img src={qrCodeDataUrl} alt="Tracking QR" className="w-20 h-20 mx-auto" />
+                  <p className="text-[9.5pt] font-bold mt-1">เช็คสถานะซ่อม</p>
+                </div>
+              )}
             </div>
           )}
         </div>

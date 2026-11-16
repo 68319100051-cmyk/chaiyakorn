@@ -21,6 +21,7 @@
         "initialConditionNotes": { "type": "string" },
         "technicianNotes": { "type": "string" },
         "technicianName": { "type": "string" },
+        "devices": { "type": "array" },
         "status": {
           "type": "string",
           "enum": ["pending", "diagnosing", "waiting_parts", "repaired", "ready_pickup", "completed", "cancelled"]
