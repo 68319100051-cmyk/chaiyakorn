@@ -410,6 +410,11 @@ export default function App() {
         ticket={ticketToPrint}
         shopSettings={shopSettings}
         initialDocType={printDocType}
+        onEditTicket={(ticket) => {
+          setIsPrintModalOpen(false);
+          setPrintDocType(undefined);
+          handleOpenEditTicket(ticket);
+        }}
       />
 
       <POSReceiptModal

@@ -10,8 +10,9 @@
 /* ============================================================================
    CENTRALIZED A5 PORTRAIT PRINT STANDARDS (148mm x 210mm)
    Margins: Top 6mm, Right 6mm, Bottom 3.5mm, Left 6mm
-   Usable content area: 136mm x 200.5mm
-   Typography: 9pt base (minimum 9pt everywhere), line-height 1.55 for Thai script
+   Usable content area: 136mm x 200.5mm (199mm print container height guard)
+   Minimum Typography: 9pt everywhere (fit cascade: 10pt -> 9.5pt -> 9pt)
+   NEVER uses transform: scale(); strictly 1 A5 page per sheet.
    ============================================================================ */
 
 @page {
@@ -22,12 +23,15 @@
 .a5-portrait-paper {
   font-family: 'Sarabun', 'Prompt', -apple-system, BlinkMacSystemFont, sans-serif;
   width: 148mm;
+  height: 210mm;
+  max-height: 210mm;
   min-height: 210mm;
   max-width: 100%;
   padding: 6mm 6mm 3.5mm 6mm;
   box-sizing: border-box;
+  overflow: hidden;
   font-size: 9pt;
-  line-height: 1.55;
+  line-height: 1.5;
   font-weight: 400;
   color: #0f172a;
   background-color: #ffffff;
@@ -39,17 +43,26 @@
   border-collapse: collapse;
 }
 
+.a5-portrait-paper th,
+.a5-portrait-paper td,
+.a5-portrait-paper p,
+.a5-portrait-paper div,
+.a5-portrait-paper span {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .a5-portrait-paper .tabular-nums {
   font-variant-numeric: tabular-nums;
 }
 
-/* Shared Shop Header: NO top border line above logo/shop name/doc number, keep bottom divider intact */
+/* Shared Shop Header: NO top border line above logo/shop name/doc number, keep bottom divider intact; NEVER shrinks */
 .a5-doc-header {
   border-top: none !important;
   border-left: none !important;
   border-right: none !important;
   border-bottom: 2px solid #1e293b;
-  padding-bottom: 0.5rem;
+  padding-bottom: 0.45rem;
 }
 
 .slip-doc-header {
@@ -69,37 +82,173 @@
   text-align: center;
 }
 
-/* Shared Content Box with comfortable breathing room */
+/* Shared Content Box */
 .a5-section-box {
   border: 1px solid #64748b;
-  padding: 7px 9px;
-  line-height: 1.55;
+  padding: 6px 9px;
+  line-height: 1.48;
+  font-size: 10pt;
 }
 
-/* Shared Signature Box */
+/* Customer / Payment & Totals / Items Table default 10pt so fit cascade has 10pt -> 9.5pt -> 9pt */
+.a5-info-box,
+.a5-items-table,
+.a5-totals-box {
+  font-size: 10pt;
+  line-height: 1.48;
+}
+
+/* Shared Signature Box: NEVER shrinks in height or font size */
 .a5-sign-box {
   border: 1px solid #64748b;
   padding: 7px 8px;
   min-height: 78px;
+  font-size: 9pt;
+  line-height: 1.45;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
 }
 
-/* Compact adjustment when a ticket has several items/devices while still keeping >= 9pt */
-.a5-portrait-paper.a5-compact {
+/* Top content stack inside A5 paper */
+.a5-top-content > * + * {
+  margin-top: 7px;
+}
+
+/* Bottom signature + stub stack inside A5 paper (always pinned to bottom) */
+.a5-bottom-content {
+  margin-top: auto;
+  padding-top: 8px;
+}
+
+.a5-bottom-content > * + * {
+  margin-top: 7px;
+}
+
+/* Fit Level 1: Reduce spacing between rows & boxes first (still 10pt) */
+.a5-portrait-paper.a5-fit-1 .a5-top-content > * + * {
+  margin-top: 4px;
+}
+.a5-portrait-paper.a5-fit-1 .a5-items-table th,
+.a5-portrait-paper.a5-fit-1 .a5-items-table td {
+  padding-top: 3px;
+  padding-bottom: 3px;
+}
+.a5-portrait-paper.a5-fit-1 .a5-info-box-cell {
+  padding: 5px 7px;
+}
+.a5-portrait-paper.a5-fit-1 .a5-section-box {
+  padding: 4px 8px;
+}
+.a5-portrait-paper.a5-fit-1 .a5-bottom-content {
+  padding-top: 5px;
+}
+.a5-portrait-paper.a5-fit-1 .a5-bottom-content > * + * {
+  margin-top: 5px;
+}
+
+/* Fit Level 2: Reduce table & info-box font by 0.5pt -> 9.5pt */
+.a5-portrait-paper.a5-fit-2 .a5-top-content > * + * {
+  margin-top: 3px;
+}
+.a5-portrait-paper.a5-fit-2 .a5-doc-banner {
+  padding: 2.5px 8px;
+}
+.a5-portrait-paper.a5-fit-2 .a5-info-box,
+.a5-portrait-paper.a5-fit-2 .a5-items-table,
+.a5-portrait-paper.a5-fit-2 .a5-totals-box,
+.a5-portrait-paper.a5-fit-2 .a5-section-box {
+  font-size: 9.5pt;
+  line-height: 1.4;
+}
+.a5-portrait-paper.a5-fit-2 .a5-items-table th,
+.a5-portrait-paper.a5-fit-2 .a5-items-table td {
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+.a5-portrait-paper.a5-fit-2 .a5-info-box-cell {
+  padding: 4px 7px;
+}
+.a5-portrait-paper.a5-fit-2 .a5-section-box {
+  padding: 3.5px 7px;
+}
+.a5-portrait-paper.a5-fit-2 .a5-bottom-content {
+  padding-top: 4px;
+}
+.a5-portrait-paper.a5-fit-2 .a5-bottom-content > * + * {
+  margin-top: 4px;
+}
+
+/* Fit Level 3: Reduce table & info-box font by another 0.5pt -> 9pt minimum */
+.a5-portrait-paper.a5-fit-3 .a5-top-content > * + * {
+  margin-top: 2.5px;
+}
+.a5-portrait-paper.a5-fit-3 .a5-doc-banner {
+  padding: 2px 8px;
+}
+.a5-portrait-paper.a5-fit-3 .a5-info-box,
+.a5-portrait-paper.a5-fit-3 .a5-items-table,
+.a5-portrait-paper.a5-fit-3 .a5-totals-box,
+.a5-portrait-paper.a5-fit-3 .a5-section-box {
   font-size: 9pt;
-  line-height: 1.45;
+  line-height: 1.35;
+}
+.a5-portrait-paper.a5-fit-3 .a5-items-table th,
+.a5-portrait-paper.a5-fit-3 .a5-items-table td {
+  padding-top: 1.5px;
+  padding-bottom: 1.5px;
+}
+.a5-portrait-paper.a5-fit-3 .a5-info-box-cell {
+  padding: 3.5px 6px;
+}
+.a5-portrait-paper.a5-fit-3 .a5-section-box {
+  padding: 3px 7px;
+}
+.a5-portrait-paper.a5-fit-3 .a5-bottom-content {
+  padding-top: 3.5px;
+}
+.a5-portrait-paper.a5-fit-3 .a5-bottom-content > * + * {
+  margin-top: 3.5px;
 }
 
-.a5-portrait-paper.a5-compact .a5-section-box {
-  padding: 5px 8px;
+/* Fit Level 4: Condense repeated text to 1 line per device + minimal spacing while strictly >= 9pt */
+.a5-portrait-paper.a5-fit-4 .a5-top-content > * + * {
+  margin-top: 2px;
+}
+.a5-portrait-paper.a5-fit-4 .a5-doc-banner {
+  padding: 1.5px 8px;
+}
+.a5-portrait-paper.a5-fit-4 .a5-info-box,
+.a5-portrait-paper.a5-fit-4 .a5-items-table,
+.a5-portrait-paper.a5-fit-4 .a5-totals-box,
+.a5-portrait-paper.a5-fit-4 .a5-section-box {
+  font-size: 9pt;
+  line-height: 1.32;
+}
+.a5-portrait-paper.a5-fit-4 .a5-items-table th,
+.a5-portrait-paper.a5-fit-4 .a5-items-table td {
+  padding-top: 1.5px;
+  padding-bottom: 1.5px;
+}
+.a5-portrait-paper.a5-fit-4 .a5-info-box-cell {
+  padding: 3px 6px;
+}
+.a5-portrait-paper.a5-fit-4 .a5-section-box {
+  padding: 2.5px 6px;
+}
+.a5-portrait-paper.a5-fit-4 .a5-bottom-content {
+  padding-top: 3px;
+}
+.a5-portrait-paper.a5-fit-4 .a5-bottom-content > * + * {
+  margin-top: 3px;
 }
 
-/* Break protection so signature block & tear-off stub stay together on the final page */
+/* Break protection on every internal block so nothing splits mid-block */
 .a5-keep-together {
   break-inside: avoid;
   page-break-inside: avoid;
+  break-after: avoid;
+  page-break-after: avoid;
 }
 
 @media print {
@@ -114,7 +263,7 @@
     color: #000000 !important;
     font-family: 'Sarabun', 'Prompt', -apple-system, BlinkMacSystemFont, sans-serif !important;
     font-size: 9pt !important;
-    line-height: 1.55 !important;
+    line-height: 1.5 !important;
     font-weight: 400 !important;
     margin: 0 !important;
     padding: 0 !important;
@@ -167,7 +316,7 @@
     overflow: visible !important;
   }
 
-  /* Single-page default: fills 136mm x 199mm so signatures push neatly to the bottom */
+  /* Strict single-page A5 fixed box: 136mm x 199mm (overflow hidden prevents page 2 spill) */
   #printable-receipt-a5,
   #pos-receipt-print-area.a5-portrait-paper,
   #gov-consolidated-statement,
@@ -184,24 +333,38 @@
     max-width: 136mm !important;
     min-height: 199mm !important;
     height: 199mm !important;
+    max-height: 199mm !important;
     margin: 0 !important;
     padding: 0 !important;
-    overflow: visible !important;
+    overflow: hidden !important;
     box-sizing: border-box !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
   }
 
-  /* Multi-page mode: only activated when N devices/items truly exceed 1 A5 page */
-  .a5-portrait-paper.a5-multi-page {
+  /* When explicitly split into multiple sheets (-1, -2, ...), each sheet stays 1 page */
+  .a5-split-stack {
     display: block !important;
-    height: auto !important;
-    min-height: 199mm !important;
-    max-height: none !important;
-    overflow: visible !important;
+    gap: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .a5-split-stack > .a5-portrait-paper:not(:last-child) {
+    break-after: page !important;
+    page-break-after: always !important;
+  }
+
+  .a5-split-stack > .a5-portrait-paper:last-child {
+    break-after: auto !important;
+    page-break-after: auto !important;
   }
 
   .a5-keep-together {
     break-inside: avoid !important;
     page-break-inside: avoid !important;
+    break-after: avoid !important;
+    page-break-after: avoid !important;
   }
 
   #printable-receipt-slip,

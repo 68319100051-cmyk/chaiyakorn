@@ -1,10 +1,11 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { RepairTicket, POSSaleRecord, ShopSettings, GovBillingStatus, GovDocumentType } from '../types';
 import { generatePromptPayQRDataUrl } from '../utils/promptpay';
 import { bahtText } from '../utils/bahtText';
 import { dbService } from '../services/db';
 import { getGovCreditDueStatus, CREDIT_DAYS_PRESETS } from '../utils/govCredit';
 import { formatThaiDateFull, formatTodayThaiFull, formatMoneyPlain, printWithCleanTitle } from '../utils/printHelpers';
+import { useA5FitToPage } from '../utils/useA5FitToPage';
 import { getTicketAllParts } from '../utils/ticketDevices';
 import {
   X,
@@ -89,6 +90,343 @@ interface GovConsolidatedBillingModalProps {
   shopSettings: ShopSettings;
 }
 
+interface GovSheetChunk {
+  sheetDocNo: string;
+  sheetIndex: number;
+  totalSheets: number;
+  bills: ConsolidatedBillItem[];
+  sheetSubtotal: number;
+  sheetDiscount: number;
+  sheetGrandTotal: number;
+}
+
+interface A5GovStatementSheetProps {
+  shopSettings: ShopSettings;
+  selectedGroup: ConsolidatedAgencyGroup;
+  docType: GovDocumentType;
+  activeDocTitle: string;
+  todayThaiDate: string;
+  chunk: GovSheetChunk;
+  isSplitSheet: boolean;
+  grandTotalAllSheets: number;
+  promptPayQrUrl: string;
+  selectedBillIds: Set<string>;
+  toggleBillSelection: (id: string) => void;
+  handleOpenDisbursementModal: (bill: ConsolidatedBillItem) => void;
+  resetDeps: unknown[];
+  onFitReport?: (sheetIndex: number, isOverflowing: boolean, measuredMm: number, fitLevel: number) => void;
+}
+
+const A5GovStatementSheet: React.FC<A5GovStatementSheetProps> = ({
+  shopSettings,
+  selectedGroup,
+  docType,
+  activeDocTitle,
+  todayThaiDate,
+  chunk,
+  isSplitSheet,
+  grandTotalAllSheets,
+  promptPayQrUrl,
+  selectedBillIds,
+  toggleBillSelection,
+  handleOpenDisbursementModal,
+  resetDeps,
+  onFitReport
+}) => {
+  const paperRef = useRef<HTMLDivElement>(null);
+  const topRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  const { fitLevel, isOverflowing, measuredContentMm } = useA5FitToPage(
+    paperRef,
+    topRef,
+    bottomRef,
+    true,
+    [...resetDeps, chunk.sheetDocNo, chunk.bills.length]
+  );
+
+  useEffect(() => {
+    onFitReport?.(chunk.sheetIndex, isOverflowing, measuredContentMm, fitLevel);
+  }, [chunk.sheetIndex, isOverflowing, measuredContentMm, fitLevel, onFitReport]);
+
+  const sheetBahtText = useMemo(() => bahtText(chunk.sheetGrandTotal), [chunk.sheetGrandTotal]);
+  const condenseLines = fitLevel >= 4;
+
+  return (
+    <div className="flex flex-col items-center w-full print:block">
+      {isSplitSheet && (
+        <div className="mb-1.5 px-3 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/70 text-amber-900 dark:text-amber-300 border border-amber-300 dark:border-amber-700 text-xs font-bold print:hidden">
+          ใบที่ {chunk.sheetIndex + 1} / {chunk.totalSheets} — เลขที่ {chunk.sheetDocNo}
+        </div>
+      )}
+
+      <div
+        ref={paperRef}
+        id={chunk.sheetIndex === 0 ? 'gov-consolidated-statement' : `gov-consolidated-statement-${chunk.sheetIndex + 1}`}
+        data-fit-level={fitLevel}
+        data-overflowing={isOverflowing ? 'true' : 'false'}
+        data-measured-mm={measuredContentMm}
+        className={`a5-portrait-paper a5-fit-${fitLevel} shadow-2xl ring-1 ring-slate-300 print:ring-0 mx-auto flex flex-col justify-between`}
+      >
+        {/* TOP + MIDDLE: Header, Gov Info & Bills Table */}
+        <div ref={topRef} className="a5-top-content">
+          {/* Header: Shop Information (NO TOP BARCODE, NO TOP LINE, NEVER SHRINKS) */}
+          <div className="a5-doc-header flex justify-between items-start gap-2.5 a5-keep-together">
+            <div className="flex items-start gap-2.5 min-w-0 flex-1">
+              {shopSettings.logoUrl && (
+                <img
+                  src={shopSettings.logoUrl}
+                  alt={shopSettings.shopName}
+                  className="h-12 w-auto max-w-[88px] object-contain shrink-0"
+                />
+              )}
+              <div className="min-w-0 leading-[1.45]">
+                <h1 className="text-[11.5pt] font-bold text-slate-950 leading-[1.3]">
+                  {shopSettings.shopName}
+                </h1>
+                <p className="text-[9pt] font-normal text-slate-800">
+                  {shopSettings.shopAddress}
+                </p>
+                <p className="text-[9pt] font-normal text-slate-900">
+                  โทร. {shopSettings.shopPhone}
+                  {shopSettings.shopLineId ? ` | LINE: ${shopSettings.shopLineId}` : ''}
+                </p>
+                {shopSettings.taxId && (
+                  <p className="text-[9pt] font-normal text-slate-800">
+                    เลขประจำตัวผู้เสียภาษี: {shopSettings.taxId}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="text-right shrink-0 space-y-0.5 leading-[1.45] whitespace-nowrap">
+              <div className="text-[9pt] font-normal text-slate-900">
+                เลขที่ <span className="font-mono text-[9.5pt] font-bold text-slate-950">{chunk.sheetDocNo}</span>
+              </div>
+              {isSplitSheet && (
+                <div className="text-[9pt] font-bold text-slate-900">
+                  แผ่นที่ {chunk.sheetIndex + 1}/{chunk.totalSheets}
+                </div>
+              )}
+              <div className="text-[9pt] font-normal text-slate-900">
+                วันที่: {todayThaiDate}
+              </div>
+            </div>
+          </div>
+
+          {/* Document Title Banner (NO TOP BORDER, BOTTOM LINE ONLY) */}
+          <div className="a5-doc-banner a5-keep-together">
+            <h2 className="text-[10.5pt] font-bold tracking-wide text-slate-950">
+              {activeDocTitle}
+              {isSplitSheet ? ` (ใบย่อย ${chunk.sheetIndex + 1}/${chunk.totalSheets})` : ''}
+            </h2>
+          </div>
+
+          {/* Government Customer Information Box */}
+          <div className="a5-section-box bg-slate-50/70 space-y-0.5 font-normal text-slate-900 a5-keep-together">
+            <div className="flex justify-between gap-2 flex-wrap">
+              <div className="break-words">
+                <span className="font-bold text-slate-950">หน่วยงาน: </span>
+                <span className="font-bold text-slate-950">{selectedGroup.agencyName}</span>
+              </div>
+              <div>
+                <span>เลขภาษี 13 หลัก: </span>
+                <span className="font-mono">{selectedGroup.taxId || '-'}</span>
+              </div>
+            </div>
+            <div className="flex justify-between gap-2 flex-wrap">
+              <div>
+                <span>ฝ่าย/งาน: </span>
+                <span>{selectedGroup.department || 'งานพัสดุ'}</span>
+              </div>
+              <div>
+                <span>ผู้ติดต่อ: </span>
+                <span>{selectedGroup.contactPerson || '-'} {selectedGroup.contactPhone ? `(${selectedGroup.contactPhone})` : ''}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Consolidated Bills Table (100% print width, NO '฿' SYMBOL ANYWHERE) */}
+          <div className="a5-items-table border border-slate-500">
+            <table className="w-full text-left border-collapse">
+              <thead className="bg-slate-200 border-b border-slate-500 text-slate-950 font-bold">
+                <tr>
+                  <th className="py-1.5 px-1 text-center w-[6%] print:hidden">เลือก</th>
+                  <th className="py-1.5 px-1 text-center w-[7%] print:w-[7%] border-r border-slate-400">ที่</th>
+                  <th className="py-1.5 px-1.5 w-[20%] print:w-[21%] border-r border-slate-400">วันที่</th>
+                  <th className="py-1.5 px-1.5 w-[19%] print:w-[21%] border-r border-slate-400">เลขที่เอกสาร</th>
+                  <th className="py-1.5 px-1.5 w-[26%] print:w-[34%] border-r border-slate-400">รายการ</th>
+                  <th className="py-1.5 px-1.5 text-right w-[16%] print:w-[17%]">รวม (บาท)</th>
+                  <th className="py-1.5 px-1 text-center w-[6%] print:hidden">จัดการ</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-300 font-normal text-slate-900">
+                {chunk.bills.map((bill, idx) => {
+                  const isIncluded = selectedBillIds.has(bill.id);
+                  return (
+                    <tr
+                      key={bill.id}
+                      className={`a5-keep-together ${isIncluded ? 'bg-white' : 'bg-slate-50/70 text-slate-400 print:hidden'}`}
+                    >
+                      <td className="py-1.5 px-1 text-center print:hidden">
+                        <button
+                          type="button"
+                          onClick={() => toggleBillSelection(bill.id)}
+                          className="cursor-pointer text-purple-600"
+                        >
+                          {isIncluded ? <CheckSquare className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5 text-slate-400" />}
+                        </button>
+                      </td>
+                      <td className="py-1.5 px-1 text-center border-r border-slate-300">{idx + 1}</td>
+                      <td className="py-1.5 px-1.5 border-r border-slate-300 break-words">{bill.date}</td>
+                      <td className="py-1.5 px-1.5 font-mono border-r border-slate-300 break-words">
+                        {bill.docNumber}
+                        {bill.disbursementNumber ? ` (${bill.disbursementNumber})` : ''}
+                      </td>
+                      <td className={`py-1.5 px-1.5 border-r border-slate-300 ${condenseLines ? 'truncate' : 'break-words'}`}>
+                        {bill.itemsDescription}
+                      </td>
+                      <td className="py-1.5 px-1.5 text-right text-slate-950 tabular-nums">
+                        {formatMoneyPlain(bill.totalAmount, 2)}
+                      </td>
+                      <td className="py-1.5 px-1 text-center print:hidden">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenDisbursementModal(bill)}
+                          className="p-0.5 rounded hover:bg-slate-100 text-slate-500 hover:text-indigo-600"
+                          title="แก้ไขฎีกา"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Summary Totals & PromptPay Section */}
+          <div className="a5-totals-box grid grid-cols-12 gap-2.5 a5-keep-together">
+            <div className="a5-info-box-cell col-span-6 p-2 border border-slate-500 bg-slate-50 flex items-center justify-between gap-2">
+              <div className="space-y-0.5 min-w-0 font-normal text-slate-900">
+                <p className="font-bold text-slate-950">ธนาคาร{shopSettings.bankName || 'กสิกรไทย'}</p>
+                <p className="font-bold text-slate-950 break-words">{shopSettings.bankAccountName || shopSettings.shopName}</p>
+                <p>พร้อมเพย์ {shopSettings.promptPayId || '0834268058'}</p>
+                {isSplitSheet && (
+                  <p className="text-[9pt] text-slate-800">รวมทุกใบ {formatMoneyPlain(grandTotalAllSheets, 2)} บาท</p>
+                )}
+              </div>
+              {promptPayQrUrl && (
+                <div className="shrink-0 flex flex-col items-center">
+                  <div className="w-[20mm] h-[20mm] p-0.5 bg-white border border-slate-400 flex items-center justify-center">
+                    <img src={promptPayQrUrl} alt="PromptPay QR" className="w-full h-full object-contain" />
+                  </div>
+                  <span className="text-[9pt] font-normal text-slate-900 mt-0.5">พร้อมเพย์</span>
+                </div>
+              )}
+            </div>
+
+            <div className="a5-info-box-cell col-span-6 p-2 border border-slate-500 bg-slate-50 space-y-0.5 tabular-nums font-normal flex flex-col justify-between">
+              <div className="space-y-0.5">
+                <div className="flex justify-between text-slate-900">
+                  <span>{isSplitSheet ? `รวมใบนี้ (${chunk.bills.length} บิล)` : `รวม (${chunk.bills.length} บิล)`}</span>
+                  <span>{formatMoneyPlain(chunk.sheetSubtotal, 2)}</span>
+                </div>
+                {chunk.sheetDiscount > 0 && (
+                  <div className="flex justify-between text-rose-700">
+                    <span>ส่วนลด</span>
+                    <span>-{formatMoneyPlain(chunk.sheetDiscount, 2)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between items-baseline pt-1 border-t-2 border-slate-800 font-bold text-[10pt] text-slate-950">
+                  <span>{isSplitSheet ? 'รวมสุทธิใบนี้ (บาท)' : 'รวมสุทธิ (บาท)'}</span>
+                  <span className="text-[10.5pt]">{formatMoneyPlain(chunk.sheetGrandTotal, 2)}</span>
+                </div>
+              </div>
+              <div className="text-right font-bold text-[9pt] text-slate-950">
+                ({sheetBahtText})
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* BOTTOM SECTION: ENLARGED SIGNATURES + CLEAN STUB (NEVER SHRINKS) */}
+        <div ref={bottomRef} className="a5-bottom-content a5-keep-together">
+          {docType === 'quotation' ? (
+            <div className="grid grid-cols-2 gap-3 text-center text-[9pt]">
+              <div className="a5-sign-box">
+                <p className="font-bold text-slate-950">ผู้เสนอราคา</p>
+                <div className="flex-1" />
+                <p className="font-bold text-slate-950">( ร้านพัทลุงปริ้นเตอร์ )</p>
+              </div>
+              <div className="a5-sign-box">
+                <p className="font-bold text-slate-950">ผู้อนุมัติ / หน่วยงาน</p>
+                <div className="flex-1" />
+                <p className="font-bold text-slate-950 truncate">( {selectedGroup.agencyName} )</p>
+              </div>
+            </div>
+          ) : docType === 'receipt' ? (
+            <div className="grid grid-cols-2 gap-3 text-center text-[9pt]">
+              <div className="a5-sign-box">
+                <p className="font-bold text-slate-950">ผู้จ่ายเงิน / เจ้าหน้าที่การเงิน</p>
+                <div className="flex-1" />
+                <p className="font-bold text-slate-950 truncate">( {selectedGroup.agencyName} )</p>
+              </div>
+              <div className="a5-sign-box">
+                <p className="font-bold text-slate-950">ผู้รับเงิน</p>
+                <div className="flex-1" />
+                <p className="font-bold text-slate-950">( ร้านพัทลุงปริ้นเตอร์ )</p>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 gap-2 text-center text-[9pt]">
+              <div className="a5-sign-box">
+                <p className="font-bold text-slate-950">ผู้วางบิล / ผู้ส่งมอบ</p>
+                <div className="flex-1" />
+                <p className="font-bold text-slate-950">( ร้านพัทลุงปริ้นเตอร์ )</p>
+              </div>
+              <div className="a5-sign-box">
+                <p className="font-bold text-slate-950">ผู้รับวางบิล / พัสดุ</p>
+                <div className="flex-1" />
+                <p className="font-bold text-slate-950 truncate">( {selectedGroup.agencyName} )</p>
+              </div>
+              <div className="a5-sign-box">
+                <p className="font-bold text-slate-950">กรรมการตรวจรับ</p>
+                <div className="flex-1" />
+                <p className="font-normal text-slate-950">( .................................... )</p>
+              </div>
+            </div>
+          )}
+
+          {/* Tear-off Stub: ONLY Doc No, Barcode, Customer/Agency Name */}
+          <div className="pt-1.5 border-t-2 border-dashed border-slate-500">
+            <div className="border border-slate-500 px-3 py-1.5 flex items-center justify-between gap-3">
+              <div className="space-y-0.5 min-w-0">
+                <div className="text-[9.5pt] font-bold text-slate-950">
+                  เลขที่เอกสาร: <span className="font-mono">{chunk.sheetDocNo}</span>
+                </div>
+                <div className="text-[9.5pt] font-bold text-slate-950 truncate">
+                  ชื่อลูกค้า: {selectedGroup.agencyName}
+                </div>
+              </div>
+              <div className="shrink-0 bg-white px-1">
+                <Barcode
+                  value={chunk.sheetDocNo}
+                  width={1.3}
+                  height={32}
+                  displayValue={false}
+                  className="h-[32px] max-w-[190px]"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalProps> = ({
   isOpen,
   onClose,
@@ -116,6 +454,14 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
   const [formDueDate, setFormDueDate] = useState<string>('');
   const [formNotes, setFormNotes] = useState<string>('');
 
+  const [isSplitMode, setIsSplitMode] = useState<boolean>(false);
+  const [splitBillLimit, setSplitBillLimit] = useState<number>(6);
+  const [singleOverflowInfo, setSingleOverflowInfo] = useState<{
+    isOverflowing: boolean;
+    measuredMm: number;
+    fitLevel: number;
+  }>({ isOverflowing: false, measuredMm: 0, fitLevel: 0 });
+  const [splitOverflows, setSplitOverflows] = useState<Record<number, boolean>>({});
   const printAreaRef = useRef<HTMLDivElement>(null);
 
   // 1. Extract and normalize all Government Credit bills from POS and Repair Tickets
@@ -334,6 +680,88 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
     }
   }, [statementGrandTotal, shopSettings]);
 
+  // Reset split mode when group/filter/docType changes
+  useEffect(() => {
+    setIsSplitMode(false);
+    setSplitBillLimit(6);
+    setSplitOverflows({});
+  }, [selectedGroupKey, statusFilter, docType, selectedBillIds]);
+
+  useEffect(() => {
+    if (!isSplitMode) return;
+    const anySplitOverflow = Object.values(splitOverflows).some(Boolean);
+    if (anySplitOverflow && splitBillLimit > 1) {
+      setSplitOverflows({});
+      setSplitBillLimit(prev => Math.max(1, prev - 1));
+    }
+  }, [isSplitMode, splitOverflows, splitBillLimit]);
+
+  const todayThaiDate = formatTodayThaiFull();
+  const docSeq = (selectedGroup?.taxId || 'GOV').slice(-6) + '-' + new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const documentNumbers: Record<GovDocumentType, string> = {
+    quotation: `QT-GOV-${docSeq}`,
+    invoice: `INV-GOV-${docSeq}`,
+    receipt: `REC-GOV-${docSeq}`,
+    work_order: `BILL-GOV-${docSeq}`
+  };
+  const activeStatementDocNo = documentNumbers[docType] || documentNumbers.invoice;
+
+  const sheetChunks: GovSheetChunk[] = useMemo(() => {
+    if (!selectedGroup) return [];
+    const previewBills = isSplitMode ? activeStatementBills : selectedGroup.bills;
+    if (!isSplitMode) {
+      return [
+        {
+          sheetDocNo: activeStatementDocNo,
+          sheetIndex: 0,
+          totalSheets: 1,
+          bills: previewBills,
+          sheetSubtotal: statementSubtotal,
+          sheetDiscount: statementDiscount,
+          sheetGrandTotal: statementGrandTotal
+        }
+      ];
+    }
+
+    const groups: ConsolidatedBillItem[][] = [];
+    const perPage = Math.max(1, splitBillLimit);
+    for (let i = 0; i < activeStatementBills.length; i += perPage) {
+      groups.push(activeStatementBills.slice(i, i + perPage));
+    }
+    return groups.map((bills, idx) => ({
+      sheetDocNo: `${activeStatementDocNo}-${idx + 1}`,
+      sheetIndex: idx,
+      totalSheets: groups.length,
+      bills,
+      sheetSubtotal: bills.reduce((sum, b) => sum + b.subtotal, 0),
+      sheetDiscount: bills.reduce((sum, b) => sum + b.discount, 0),
+      sheetGrandTotal: bills.reduce((sum, b) => sum + b.totalAmount, 0)
+    }));
+  }, [
+    selectedGroup,
+    isSplitMode,
+    activeStatementBills,
+    activeStatementDocNo,
+    statementSubtotal,
+    statementDiscount,
+    statementGrandTotal,
+    splitBillLimit
+  ]);
+
+  const handleSingleFitReport = useCallback(
+    (_sheetIndex: number, isOverflowing: boolean, measuredMm: number, fitLevel: number) => {
+      setSingleOverflowInfo({ isOverflowing, measuredMm, fitLevel });
+    },
+    []
+  );
+
+  const handleSplitFitReport = useCallback((sheetIndex: number, isOverflowing: boolean) => {
+    setSplitOverflows(prev => {
+      if (prev[sheetIndex] === isOverflowing) return prev;
+      return { ...prev, [sheetIndex]: isOverflowing };
+    });
+  }, []);
+
   if (!isOpen) return null;
 
   const toggleBillSelection = (billId: string) => {
@@ -358,7 +786,10 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
     }
   };
 
+  const isPrintBlocked = !isSplitMode && singleOverflowInfo.isOverflowing;
+
   const handlePrint = () => {
+    if (isPrintBlocked) return;
     printWithCleanTitle(`${activeDocTitle.th}-${activeStatementDocNo}`);
   };
 
@@ -490,17 +921,6 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
     return true;
   });
 
-  const todayThaiDate = formatTodayThaiFull();
-
-  // Consolidated document sequence & titles
-  const docSeq = (selectedGroup?.taxId || 'GOV').slice(-6) + '-' + new Date().toISOString().slice(0, 10).replace(/-/g, '');
-  const documentNumbers: Record<GovDocumentType, string> = {
-    quotation: `QT-GOV-${docSeq}`,
-    invoice: `INV-GOV-${docSeq}`,
-    receipt: `REC-GOV-${docSeq}`,
-    work_order: `BILL-GOV-${docSeq}`
-  };
-
   const documentTitles: Record<GovDocumentType, { th: string; en: string; badge: string; desc: string }> = {
     quotation: {
       th: 'ใบเสนอราคา',
@@ -529,7 +949,6 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
   };
 
   const activeDocTitle = documentTitles[docType] || documentTitles.invoice;
-  const activeStatementDocNo = documentNumbers[docType] || documentNumbers.invoice;
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/75 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 print-modal-overlay">
@@ -562,11 +981,19 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
             <button
               type="button"
               onClick={handlePrint}
-              disabled={!selectedGroup || activeStatementBills.length === 0}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-md shadow-purple-500/20 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+              disabled={!selectedGroup || activeStatementBills.length === 0 || isPrintBlocked}
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-xl font-bold text-xs shadow-md transition-all ${
+                !selectedGroup || activeStatementBills.length === 0 || isPrintBlocked
+                  ? 'bg-slate-300 text-slate-500 cursor-not-allowed shadow-none'
+                  : 'bg-purple-600 hover:bg-purple-700 text-white shadow-purple-500/20 active:scale-95 cursor-pointer'
+              }`}
             >
               <Printer className="w-4 h-4" />
-              <span>พิมพ์{activeDocTitle.th} (A5 แนวตั้ง)</span>
+              <span>
+                {isSplitMode
+                  ? `พิมพ์${activeDocTitle.th} (${sheetChunks.length} ใบ)`
+                  : `พิมพ์${activeDocTitle.th} (A5 แนวตั้ง)`}
+              </span>
             </button>
 
             <button
@@ -834,260 +1261,81 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
 
                 {/* Printable Document Paper Area */}
                 <div className="flex-1 overflow-y-auto overflow-x-auto w-full p-2 sm:p-6 bg-slate-200/75 dark:bg-slate-950 flex flex-col items-center print:p-0 print:bg-white print:overflow-visible">
-                  <div className="mb-2 px-3 py-1 rounded-full bg-blue-100 dark:bg-blue-950/70 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-xs font-bold print:hidden">
-                    ตัวอย่างกระดาษ A5 แนวตั้ง (148 × 210 มม. | ขอบ ซ้าย-ขวา-บน 6 มม. / ล่าง 3.5 มม.)
-                  </div>
+                  {!isSplitMode && singleOverflowInfo.isOverflowing ? (
+                    <div
+                      role="alert"
+                      className="mb-3 w-full max-w-[148mm] p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/80 border-2 border-rose-500 text-rose-950 dark:text-rose-100 shadow-lg space-y-2.5 print:hidden"
+                    >
+                      <div className="flex items-start gap-2.5">
+                        <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                        <div className="space-y-1 text-xs">
+                          <p className="font-bold text-sm text-rose-700 dark:text-rose-300">
+                            รายการเยอะเกินไปสำหรับ A5 หน้าเดียว
+                          </p>
+                          <p className="text-rose-800 dark:text-rose-200">
+                            เนื้อหาสูงจริง {singleOverflowInfo.measuredMm} มม. (เกินพื้นที่ A5 198.5 มม. แม้ปรับระยะห่างและลดฟอนต์เป็น 9pt แล้ว)
+                            กรุณาเลือกแยกเป็นหลายใบ หรือลดจำนวนบิลที่เลือกด้านล่าง
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => setIsSplitMode(true)}
+                          className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-sm cursor-pointer"
+                        >
+                          <Layers className="w-3.5 h-3.5" />
+                          <span>แยกเป็นหลายใบ ({activeStatementDocNo}-1, -2, ...)</span>
+                        </button>
+                      </div>
+                    </div>
+                  ) : isSplitMode ? (
+                    <div className="mb-3 px-3.5 py-1.5 rounded-full bg-amber-100 dark:bg-amber-950/70 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-700 text-xs font-bold flex items-center gap-2 print:hidden">
+                      <Layers className="w-3.5 h-3.5" />
+                      <span>โหมดแยกพิมพ์ {sheetChunks.length} ใบ A5 ({activeStatementDocNo}-1 ถึง -{sheetChunks.length}) • ทุกใบมีช่องเซ็นครบ</span>
+                      <button
+                        type="button"
+                        onClick={() => setIsSplitMode(false)}
+                        className="underline ml-1 text-blue-700 dark:text-blue-300 cursor-pointer"
+                      >
+                        ดูแบบรวมใบเดียว
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="mb-2 px-3 py-1 rounded-full bg-blue-100 dark:bg-blue-950/70 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-xs font-bold print:hidden">
+                      ตัวอย่าง A5 หน้าเดียว (148 × 210 มม. | พอดี 1 หน้า • ความสูงจริง {singleOverflowInfo.measuredMm || '-'} / 198.5 มม. • ระดับย่อ {singleOverflowInfo.fitLevel}/4)
+                    </div>
+                  )}
 
                   <div
                     ref={printAreaRef}
-                    id="gov-consolidated-statement"
-                    className={`a5-portrait-paper shadow-2xl border border-slate-300 mx-auto flex flex-col justify-between ${
-                      selectedGroup.bills.length >= 4 && selectedGroup.bills.length <= 7 ? 'a5-compact' : ''
-                    } ${selectedGroup.bills.length > 7 ? 'a5-multi-page' : ''}`}
+                    className={isSplitMode ? 'a5-split-stack flex flex-col items-center gap-6 w-full print:block' : 'w-full flex flex-col items-center print:block'}
                   >
-                    {/* TOP + MIDDLE: Header, Gov Info & Bills Table */}
-                    <div className="space-y-2">
-                      {/* Header: Shop Information (NO TOP BARCODE, NO TOP LINE) */}
-                      <div className="a5-doc-header flex justify-between items-start gap-2.5">
-                        <div className="flex items-start gap-2.5 min-w-0 flex-1">
-                          {shopSettings.logoUrl && (
-                            <img
-                              src={shopSettings.logoUrl}
-                              alt={shopSettings.shopName}
-                              className="h-12 w-auto max-w-[88px] object-contain shrink-0"
-                            />
-                          )}
-                          <div className="min-w-0 leading-[1.5]">
-                            <h1 className="text-[11.5pt] font-bold text-slate-950 leading-[1.35]">
-                              {shopSettings.shopName}
-                            </h1>
-                            <p className="text-[9pt] font-normal text-slate-800">
-                              {shopSettings.shopAddress}
-                            </p>
-                            <p className="text-[9pt] font-normal text-slate-900">
-                              โทร. {shopSettings.shopPhone}
-                              {shopSettings.shopLineId ? ` | LINE: ${shopSettings.shopLineId}` : ''}
-                            </p>
-                            {shopSettings.taxId && (
-                              <p className="text-[9pt] font-normal text-slate-800">
-                                เลขประจำตัวผู้เสียภาษี: {shopSettings.taxId}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-
-                        <div className="text-right shrink-0 space-y-0.5 leading-[1.5]">
-                          <div className="text-[9pt] font-normal text-slate-900">
-                            เลขที่ <span className="font-mono text-[9.5pt] font-bold text-slate-950">{activeStatementDocNo}</span>
-                          </div>
-                          <div className="text-[9pt] font-normal text-slate-900">
-                            วันที่: {todayThaiDate}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Document Title Banner (NO TOP BORDER, BOTTOM LINE ONLY) */}
-                      <div className="a5-doc-banner">
-                        <h2 className="text-[10.5pt] font-bold tracking-wide text-slate-950">
-                          {activeDocTitle.th}
-                        </h2>
-                      </div>
-
-                      {/* Government Customer Information Box */}
-                      <div className="a5-section-box bg-slate-50/70 space-y-1 text-[9pt] leading-[1.55] font-normal text-slate-900">
-                        <div className="flex justify-between gap-2 flex-wrap">
-                          <div className="break-words">
-                            <span className="font-bold text-slate-950">หน่วยงาน: </span>
-                            <span className="font-bold text-slate-950">{selectedGroup.agencyName}</span>
-                          </div>
-                          <div>
-                            <span>เลขภาษี 13 หลัก: </span>
-                            <span className="font-mono">{selectedGroup.taxId || '-'}</span>
-                          </div>
-                        </div>
-                        <div className="flex justify-between gap-2 flex-wrap">
-                          <div>
-                            <span>ฝ่าย/งาน: </span>
-                            <span>{selectedGroup.department || 'งานพัสดุ'}</span>
-                          </div>
-                          <div>
-                            <span>ผู้ติดต่อ: </span>
-                            <span>{selectedGroup.contactPerson || '-'} {selectedGroup.contactPhone ? `(${selectedGroup.contactPhone})` : ''}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Consolidated Bills Table (NO '฿' SYMBOL ANYWHERE) */}
-                      <div className="border border-slate-500 text-[9pt] leading-[1.55]">
-                        <table className="w-full text-left border-collapse">
-                          <thead className="bg-slate-200 border-b border-slate-500 text-slate-950 font-bold">
-                            <tr>
-                              <th className="py-1.5 px-1 text-center w-[7%] print:hidden">เลือก</th>
-                              <th className="py-1.5 px-1 text-center w-[7%] border-r border-slate-400">ที่</th>
-                              <th className="py-1.5 px-1.5 w-[22%] border-r border-slate-400">วันที่</th>
-                              <th className="py-1.5 px-1.5 w-[20%] border-r border-slate-400">เลขที่เอกสาร</th>
-                              <th className="py-1.5 px-1.5 w-[28%] border-r border-slate-400">รายการ</th>
-                              <th className="py-1.5 px-1.5 text-right w-[16%]">รวม (บาท)</th>
-                              <th className="py-1.5 px-1 text-center w-[7%] print:hidden">จัดการ</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-300 font-normal text-slate-900">
-                            {selectedGroup.bills.map((bill, idx) => {
-                              const isIncluded = selectedBillIds.has(bill.id);
-                              return (
-                                <tr
-                                  key={bill.id}
-                                  className={`a5-keep-together ${isIncluded ? 'bg-white' : 'bg-slate-50/70 text-slate-400 print:hidden'}`}
-                                >
-                                  <td className="py-1.5 px-1 text-center print:hidden">
-                                    <button
-                                      type="button"
-                                      onClick={() => toggleBillSelection(bill.id)}
-                                      className="cursor-pointer text-purple-600"
-                                    >
-                                      {isIncluded ? <CheckSquare className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5 text-slate-400" />}
-                                    </button>
-                                  </td>
-                                  <td className="py-1.5 px-1 text-center border-r border-slate-300">{idx + 1}</td>
-                                  <td className="py-1.5 px-1.5 border-r border-slate-300 break-words">{bill.date}</td>
-                                  <td className="py-1.5 px-1.5 font-mono border-r border-slate-300 break-words">
-                                    {bill.docNumber}
-                                    {bill.disbursementNumber ? ` (${bill.disbursementNumber})` : ''}
-                                  </td>
-                                  <td className="py-1.5 px-1.5 border-r border-slate-300 break-words">{bill.itemsDescription}</td>
-                                  <td className="py-1.5 px-1.5 text-right text-slate-950 tabular-nums">
-                                    {formatMoneyPlain(bill.totalAmount, 2)}
-                                  </td>
-                                  <td className="py-1.5 px-1 text-center print:hidden">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleOpenDisbursementModal(bill)}
-                                      className="p-0.5 rounded hover:bg-slate-100 text-slate-500 hover:text-indigo-600"
-                                      title="แก้ไขฎีกา"
-                                    >
-                                      <Edit3 className="w-3.5 h-3.5" />
-                                    </button>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-
-                      {/* Summary Totals & PromptPay Section */}
-                      <div className="grid grid-cols-12 gap-2.5 text-[9pt] leading-[1.55] a5-keep-together">
-                        <div className="col-span-6 p-2 border border-slate-500 bg-slate-50 flex items-center justify-between gap-2">
-                          <div className="space-y-1 min-w-0 font-normal text-slate-900">
-                            <p className="font-bold text-slate-950">ธนาคาร{shopSettings.bankName || 'กสิกรไทย'}</p>
-                            <p className="font-bold text-slate-950 break-words">{shopSettings.bankAccountName || shopSettings.shopName}</p>
-                            <p>พร้อมเพย์ {shopSettings.promptPayId || '0834268058'}</p>
-                          </div>
-                          {promptPayQrUrl && (
-                            <div className="shrink-0 flex flex-col items-center">
-                              <div className="w-[20mm] h-[20mm] p-0.5 bg-white border border-slate-400 flex items-center justify-center">
-                                <img src={promptPayQrUrl} alt="PromptPay QR" className="w-full h-full object-contain" />
-                              </div>
-                              <span className="text-[9pt] font-normal text-slate-900 mt-1">พร้อมเพย์</span>
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="col-span-6 p-2 border border-slate-500 bg-slate-50 space-y-1 tabular-nums font-normal flex flex-col justify-between">
-                          <div className="space-y-0.5">
-                            <div className="flex justify-between text-slate-900">
-                              <span>รวม ({activeStatementBills.length} บิล)</span>
-                              <span>{formatMoneyPlain(statementSubtotal, 2)}</span>
-                            </div>
-                            {statementDiscount > 0 && (
-                              <div className="flex justify-between text-rose-700">
-                                <span>ส่วนลด</span>
-                                <span>-{formatMoneyPlain(statementDiscount, 2)}</span>
-                              </div>
-                            )}
-                            <div className="flex justify-between items-baseline pt-1 border-t-2 border-slate-800 font-bold text-[10pt] text-slate-950">
-                              <span>รวมสุทธิ (บาท)</span>
-                              <span className="text-[10.5pt]">{formatMoneyPlain(statementGrandTotal, 2)}</span>
-                            </div>
-                          </div>
-                          <div className="text-right font-bold text-[9pt] text-slate-950">
-                            ({statementBahtText})
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* BOTTOM SECTION: ENLARGED SIGNATURES + CLEAN STUB */}
-                    <div className="mt-auto pt-2.5 space-y-2 a5-keep-together">
-                      {docType === 'quotation' ? (
-                        <div className="grid grid-cols-2 gap-3 text-center text-[9pt]">
-                          <div className="a5-sign-box">
-                            <p className="font-bold text-slate-950">ผู้เสนอราคา</p>
-                            <div className="flex-1" />
-                            <p className="font-bold text-slate-950">( ร้านพัทลุงปริ้นเตอร์ )</p>
-                          </div>
-                          <div className="a5-sign-box">
-                            <p className="font-bold text-slate-950">ผู้อนุมัติ / หน่วยงาน</p>
-                            <div className="flex-1" />
-                            <p className="font-bold text-slate-950 truncate">( {selectedGroup.agencyName} )</p>
-                          </div>
-                        </div>
-                      ) : docType === 'receipt' ? (
-                        <div className="grid grid-cols-2 gap-3 text-center text-[9pt]">
-                          <div className="a5-sign-box">
-                            <p className="font-bold text-slate-950">ผู้จ่ายเงิน / เจ้าหน้าที่การเงิน</p>
-                            <div className="flex-1" />
-                            <p className="font-bold text-slate-950 truncate">( {selectedGroup.agencyName} )</p>
-                          </div>
-                          <div className="a5-sign-box">
-                            <p className="font-bold text-slate-950">ผู้รับเงิน</p>
-                            <div className="flex-1" />
-                            <p className="font-bold text-slate-950">( ร้านพัทลุงปริ้นเตอร์ )</p>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="grid grid-cols-3 gap-2 text-center text-[9pt]">
-                          <div className="a5-sign-box">
-                            <p className="font-bold text-slate-950">ผู้วางบิล / ผู้ส่งมอบ</p>
-                            <div className="flex-1" />
-                            <p className="font-bold text-slate-950">( ร้านพัทลุงปริ้นเตอร์ )</p>
-                          </div>
-                          <div className="a5-sign-box">
-                            <p className="font-bold text-slate-950">ผู้รับวางบิล / พัสดุ</p>
-                            <div className="flex-1" />
-                            <p className="font-bold text-slate-950 truncate">( {selectedGroup.agencyName} )</p>
-                          </div>
-                          <div className="a5-sign-box">
-                            <p className="font-bold text-slate-950">กรรมการตรวจรับ</p>
-                            <div className="flex-1" />
-                            <p className="font-normal text-slate-950">( .................................... )</p>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Tear-off Stub: ONLY Doc No, Barcode, Customer/Agency Name */}
-                      <div className="pt-2 border-t-2 border-dashed border-slate-500">
-                        <div className="border border-slate-500 px-3 py-2 flex items-center justify-between gap-3">
-                          <div className="space-y-1 min-w-0">
-                            <div className="text-[9.5pt] font-bold text-slate-950">
-                              เลขที่เอกสาร: <span className="font-mono">{activeStatementDocNo}</span>
-                            </div>
-                            <div className="text-[9.5pt] font-bold text-slate-950 truncate">
-                              ชื่อลูกค้า: {selectedGroup.agencyName}
-                            </div>
-                          </div>
-                          <div className="shrink-0 bg-white px-1">
-                            <Barcode
-                              value={activeStatementDocNo}
-                              width={1.3}
-                              height={32}
-                              displayValue={false}
-                              className="h-[32px] max-w-[190px]"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
+                    {sheetChunks.map(chunk => (
+                      <A5GovStatementSheet
+                        key={`${chunk.sheetDocNo}-${chunk.sheetIndex}`}
+                        shopSettings={shopSettings}
+                        selectedGroup={selectedGroup}
+                        docType={docType}
+                        activeDocTitle={activeDocTitle.th}
+                        todayThaiDate={todayThaiDate}
+                        chunk={chunk}
+                        isSplitSheet={isSplitMode}
+                        grandTotalAllSheets={statementGrandTotal}
+                        promptPayQrUrl={promptPayQrUrl}
+                        selectedBillIds={selectedBillIds}
+                        toggleBillSelection={toggleBillSelection}
+                        handleOpenDisbursementModal={handleOpenDisbursementModal}
+                        resetDeps={[
+                          selectedGroup.groupKey,
+                          docType,
+                          statusFilter,
+                          activeStatementBills.length,
+                          promptPayQrUrl
+                        ]}
+                        onFitReport={isSplitMode ? handleSplitFitReport : handleSingleFitReport}
+                      />
+                    ))}
                   </div>
                 </div>
               </>
