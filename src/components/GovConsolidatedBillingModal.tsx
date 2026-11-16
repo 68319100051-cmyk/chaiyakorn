@@ -4,7 +4,7 @@ import { generatePromptPayQRDataUrl } from '../utils/promptpay';
 import { bahtText } from '../utils/bahtText';
 import { dbService } from '../services/db';
 import { getGovCreditDueStatus, CREDIT_DAYS_PRESETS } from '../utils/govCredit';
-import { formatThaiDateFull, formatTodayThaiFull, formatMoneyPlain } from '../utils/printHelpers';
+import { formatThaiDateFull, formatTodayThaiFull, formatMoneyPlain, printWithCleanTitle } from '../utils/printHelpers';
 import { getTicketAllParts } from '../utils/ticketDevices';
 import {
   X,
@@ -359,7 +359,7 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
   };
 
   const handlePrint = () => {
-    window.print();
+    printWithCleanTitle(`${activeDocTitle.th}-${activeStatementDocNo}`);
   };
 
   // Open Disbursement Recording Modal
@@ -503,26 +503,26 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
 
   const documentTitles: Record<GovDocumentType, { th: string; en: string; badge: string; desc: string }> = {
     quotation: {
-      th: 'ใบเสนอราคารวม (หน่วยงานราชการ/สถานศึกษา)',
+      th: 'ใบเสนอราคา',
       en: 'CONSOLIDATED QUOTATION',
       badge: 'bg-blue-800 text-white',
       desc: 'เอกสารเสนอราคารวมเพื่อขออนุมัติงบประมาณก่อนดำเนินการซ่อมและส่งมอบพัสดุ'
     },
     invoice: {
-      th: 'ใบแจ้งหนี้ / ใบวางบิลรวม (หน่วยงานราชการ)',
-      en: 'CONSOLIDATED INVOICE / BILLING NOTE',
+      th: 'ใบแจ้งหนี้',
+      en: 'CONSOLIDATED INVOICE',
       badge: 'bg-purple-900 text-white',
       desc: 'เอกสารเรียกเก็บเงินตามระเบียบพัสดุราชการ รวมบิลตามเลขประจำตัวผู้เสียภาษี'
     },
     receipt: {
-      th: 'ใบเสร็จรับเงินรวม (หน่วยงานราชการ)',
-      en: 'CONSOLIDATED OFFICIAL RECEIPT',
+      th: 'ใบเสร็จรับเงิน',
+      en: 'CONSOLIDATED RECEIPT',
       badge: 'bg-emerald-800 text-white',
       desc: 'เอกสารใบเสร็จรับเงินอย่างเป็นทางการเมื่อเงินโอนเข้าหรือเบิกจ่ายเงินฎีกาเรียบร้อย'
     },
     work_order: {
-      th: 'ใบวางบิล / ใบส่งมอบงานรวม',
-      en: 'BILLING STATEMENT & WORK ORDER',
+      th: 'ใบวางบิล',
+      en: 'BILLING STATEMENT',
       badge: 'bg-slate-800 text-white',
       desc: 'หลักฐานการส่งมอบงานและรับพัสดุราชการ'
     }
@@ -543,13 +543,13 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
             </div>
             <div>
               <h2 className="text-base sm:text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2">
-                <span>ระบบรวมบิลวางบิลราชการ (ตามเลขผู้เสียภาษี)</span>
+                <span>ระบบรวมบิลวางบิลราชการ</span>
                 <span className="text-xs px-2.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 font-bold">
                   {groupedAgencies.length} หน่วยงาน • รวม {allGovBills.length} บิล
                 </span>
               </h2>
               <p className="text-xs text-slate-500">
-                รวมบิลขายหน้าร้านและงานซ่อมที่เลขผู้เสียภาษีตรงกัน เพื่อออกใบเสนอราคา ใบแจ้งหนี้ หรือใบเสร็จรวม
+                รวมบิลขายหน้าร้านและงานซ่อมที่เลขผู้เสียภาษีตรงกัน เพื่อออกใบเสนอราคา ใบแจ้งหนี้ หรือใบเสร็จรับเงิน
               </p>
             </div>
           </div>
@@ -566,7 +566,7 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
               className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-md shadow-purple-500/20 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
             >
               <Printer className="w-4 h-4" />
-              <span>พิมพ์{docType === 'quotation' ? 'ใบเสนอราคา' : docType === 'receipt' ? 'ใบเสร็จรับเงิน' : 'ใบวางบิล'} (A5 แนวตั้ง)</span>
+              <span>พิมพ์{activeDocTitle.th} (A5 แนวตั้ง)</span>
             </button>
 
             <button
@@ -763,7 +763,7 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
                             : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
                         }`}
                       >
-                        ใบแจ้งหนี้ / ใบวางบิล
+                        ใบแจ้งหนี้
                       </button>
                       <button
                         type="button"
@@ -774,7 +774,7 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
                             : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
                         }`}
                       >
-                        ใบเสนอราคา (ขออนุมัติงบ)
+                        ใบเสนอราคา
                       </button>
                       <button
                         type="button"
@@ -785,7 +785,7 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
                             : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
                         }`}
                       >
-                        ใบเสร็จรับเงินรวม
+                        ใบเสร็จรับเงิน
                       </button>
                     </div>
                   </div>
@@ -842,96 +842,96 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
                     ref={printAreaRef}
                     id="gov-consolidated-statement"
                     className={`a5-portrait-paper shadow-2xl border border-slate-300 mx-auto flex flex-col justify-between ${
-                      selectedGroup.bills.length >= 6 && selectedGroup.bills.length <= 10 ? 'a5-compact' : ''
-                    } ${selectedGroup.bills.length > 10 ? 'a5-multi-page' : ''}`}
+                      selectedGroup.bills.length >= 4 && selectedGroup.bills.length <= 7 ? 'a5-compact' : ''
+                    } ${selectedGroup.bills.length > 7 ? 'a5-multi-page' : ''}`}
                   >
                     {/* TOP + MIDDLE: Header, Gov Info & Bills Table */}
-                    <div className="space-y-1.5">
+                    <div className="space-y-2">
                       {/* Header: Shop Information (NO TOP BARCODE) */}
-                      <div className="flex justify-between items-start gap-2 border-b-2 border-slate-800 pb-1.5">
+                      <div className="flex justify-between items-start gap-2.5 border-b-2 border-slate-800 pb-2">
                         <div className="flex items-start gap-2.5 min-w-0 flex-1">
                           {shopSettings.logoUrl && (
                             <img
                               src={shopSettings.logoUrl}
                               alt={shopSettings.shopName}
-                              className="h-14 w-auto max-w-[96px] object-contain shrink-0"
+                              className="h-12 w-auto max-w-[88px] object-contain shrink-0"
                             />
                           )}
-                          <div className="min-w-0 leading-snug">
-                            <h1 className="text-[13pt] font-extrabold text-slate-950 leading-tight">
+                          <div className="min-w-0 leading-[1.5]">
+                            <h1 className="text-[11.5pt] font-bold text-slate-950 leading-[1.35]">
                               {shopSettings.shopName}
                             </h1>
-                            <p className="text-[9.5pt] text-slate-800 leading-snug">
+                            <p className="text-[9pt] font-normal text-slate-800">
                               {shopSettings.shopAddress}
                             </p>
-                            <p className="text-[9.5pt] text-slate-900 font-semibold">
+                            <p className="text-[9pt] font-normal text-slate-900">
                               โทร. {shopSettings.shopPhone}
                               {shopSettings.shopLineId ? ` | LINE: ${shopSettings.shopLineId}` : ''}
                             </p>
                             {shopSettings.taxId && (
-                              <p className="text-[9pt] text-slate-800">
+                              <p className="text-[9pt] font-normal text-slate-800">
                                 เลขประจำตัวผู้เสียภาษี: {shopSettings.taxId}
                               </p>
                             )}
                           </div>
                         </div>
 
-                        <div className="text-right shrink-0 space-y-0.5">
-                          <div className="text-[10pt] font-bold text-slate-900">
-                            เลขที่ <span className="font-mono text-[10.5pt] font-extrabold text-slate-950">{activeStatementDocNo}</span>
+                        <div className="text-right shrink-0 space-y-0.5 leading-[1.5]">
+                          <div className="text-[9pt] font-normal text-slate-900">
+                            เลขที่ <span className="font-mono text-[9.5pt] font-bold text-slate-950">{activeStatementDocNo}</span>
                           </div>
-                          <div className="text-[9.5pt] font-medium text-slate-900">
+                          <div className="text-[9pt] font-normal text-slate-900">
                             วันที่: {todayThaiDate}
                           </div>
                         </div>
                       </div>
 
-                      {/* Document Title Banner */}
-                      <div className="py-1 border-y border-slate-700 bg-slate-100 text-center">
-                        <h2 className="text-[11pt] font-extrabold tracking-wide text-slate-950">
+                      {/* Document Title Banner (NO TOP BORDER, BOTTOM LINE ONLY) */}
+                      <div className="a5-doc-banner">
+                        <h2 className="text-[10.5pt] font-bold tracking-wide text-slate-950">
                           {activeDocTitle.th}
                         </h2>
                       </div>
 
                       {/* Government Customer Information Box */}
-                      <div className="border border-slate-500 p-1.5 bg-slate-50/70 space-y-0.5 text-[10pt] leading-snug">
+                      <div className="a5-section-box bg-slate-50/70 space-y-1 text-[9pt] leading-[1.55] font-normal text-slate-900">
                         <div className="flex justify-between gap-2 flex-wrap">
-                          <div>
-                            <span className="font-bold text-slate-900">หน่วยงาน: </span>
-                            <span className="font-extrabold text-slate-950">{selectedGroup.agencyName}</span>
+                          <div className="break-words">
+                            <span className="font-bold text-slate-950">หน่วยงาน: </span>
+                            <span className="font-bold text-slate-950">{selectedGroup.agencyName}</span>
                           </div>
                           <div>
-                            <span className="font-semibold text-slate-800">เลขภาษี 13 หลัก: </span>
-                            <span className="font-mono font-bold text-slate-950">{selectedGroup.taxId || '-'}</span>
+                            <span>เลขภาษี 13 หลัก: </span>
+                            <span className="font-mono">{selectedGroup.taxId || '-'}</span>
                           </div>
                         </div>
-                        <div className="flex justify-between gap-2 flex-wrap text-[9.5pt]">
+                        <div className="flex justify-between gap-2 flex-wrap">
                           <div>
-                            <span className="font-semibold text-slate-800">ฝ่าย/งาน: </span>
+                            <span>ฝ่าย/งาน: </span>
                             <span>{selectedGroup.department || 'งานพัสดุ'}</span>
                           </div>
                           <div>
-                            <span className="font-semibold text-slate-800">ผู้ติดต่อ: </span>
+                            <span>ผู้ติดต่อ: </span>
                             <span>{selectedGroup.contactPerson || '-'} {selectedGroup.contactPhone ? `(${selectedGroup.contactPhone})` : ''}</span>
                           </div>
                         </div>
                       </div>
 
                       {/* Consolidated Bills Table (NO '฿' SYMBOL ANYWHERE) */}
-                      <div className="border border-slate-500 text-[9.5pt]">
+                      <div className="border border-slate-500 text-[9pt] leading-[1.55]">
                         <table className="w-full text-left border-collapse">
-                          <thead className="bg-slate-200 border-b border-slate-500 text-slate-950 font-extrabold">
+                          <thead className="bg-slate-200 border-b border-slate-500 text-slate-950 font-bold">
                             <tr>
-                              <th className="py-1 px-1 text-center w-[7%] print:hidden">เลือก</th>
-                              <th className="py-1 px-1 text-center w-[7%] border-r border-slate-400">ที่</th>
-                              <th className="py-1 px-1 w-[21%] border-r border-slate-400">วันที่</th>
-                              <th className="py-1 px-1 w-[20%] border-r border-slate-400">เลขที่เอกสาร</th>
-                              <th className="py-1 px-1 w-[28%] border-r border-slate-400">รายการ</th>
-                              <th className="py-1 px-1.5 text-right w-[17%]">รวม (บาท)</th>
-                              <th className="py-1 px-1 text-center w-[7%] print:hidden">จัดการ</th>
+                              <th className="py-1.5 px-1 text-center w-[7%] print:hidden">เลือก</th>
+                              <th className="py-1.5 px-1 text-center w-[7%] border-r border-slate-400">ที่</th>
+                              <th className="py-1.5 px-1.5 w-[22%] border-r border-slate-400">วันที่</th>
+                              <th className="py-1.5 px-1.5 w-[20%] border-r border-slate-400">เลขที่เอกสาร</th>
+                              <th className="py-1.5 px-1.5 w-[28%] border-r border-slate-400">รายการ</th>
+                              <th className="py-1.5 px-1.5 text-right w-[16%]">รวม (บาท)</th>
+                              <th className="py-1.5 px-1 text-center w-[7%] print:hidden">จัดการ</th>
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-slate-300">
+                          <tbody className="divide-y divide-slate-300 font-normal text-slate-900">
                             {selectedGroup.bills.map((bill, idx) => {
                               const isIncluded = selectedBillIds.has(bill.id);
                               return (
@@ -939,7 +939,7 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
                                   key={bill.id}
                                   className={`a5-keep-together ${isIncluded ? 'bg-white' : 'bg-slate-50/70 text-slate-400 print:hidden'}`}
                                 >
-                                  <td className="py-1 px-1 text-center print:hidden">
+                                  <td className="py-1.5 px-1 text-center print:hidden">
                                     <button
                                       type="button"
                                       onClick={() => toggleBillSelection(bill.id)}
@@ -948,17 +948,17 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
                                       {isIncluded ? <CheckSquare className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5 text-slate-400" />}
                                     </button>
                                   </td>
-                                  <td className="py-1 px-1 text-center border-r border-slate-300">{idx + 1}</td>
-                                  <td className="py-1 px-1 border-r border-slate-300 break-words">{bill.date}</td>
-                                  <td className="py-1 px-1 font-mono font-bold border-r border-slate-300 break-words">
+                                  <td className="py-1.5 px-1 text-center border-r border-slate-300">{idx + 1}</td>
+                                  <td className="py-1.5 px-1.5 border-r border-slate-300 break-words">{bill.date}</td>
+                                  <td className="py-1.5 px-1.5 font-mono border-r border-slate-300 break-words">
                                     {bill.docNumber}
                                     {bill.disbursementNumber ? ` (${bill.disbursementNumber})` : ''}
                                   </td>
-                                  <td className="py-1 px-1 border-r border-slate-300 break-words">{bill.itemsDescription}</td>
-                                  <td className="py-1 px-1.5 text-right font-bold text-slate-950 tabular-nums">
+                                  <td className="py-1.5 px-1.5 border-r border-slate-300 break-words">{bill.itemsDescription}</td>
+                                  <td className="py-1.5 px-1.5 text-right text-slate-950 tabular-nums">
                                     {formatMoneyPlain(bill.totalAmount, 2)}
                                   </td>
-                                  <td className="py-1 px-1 text-center print:hidden">
+                                  <td className="py-1.5 px-1 text-center print:hidden">
                                     <button
                                       type="button"
                                       onClick={() => handleOpenDisbursementModal(bill)}
@@ -976,41 +976,41 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
                       </div>
 
                       {/* Summary Totals & PromptPay Section */}
-                      <div className="grid grid-cols-12 gap-2 text-[10pt] a5-keep-together">
-                        <div className="col-span-6 p-1.5 border border-slate-500 bg-slate-50 flex items-center justify-between gap-2">
-                          <div className="text-[9.5pt] space-y-0.5 leading-snug min-w-0">
+                      <div className="grid grid-cols-12 gap-2.5 text-[9pt] leading-[1.55] a5-keep-together">
+                        <div className="col-span-6 p-2 border border-slate-500 bg-slate-50 flex items-center justify-between gap-2">
+                          <div className="space-y-1 min-w-0 font-normal text-slate-900">
                             <p className="font-bold text-slate-950">ธนาคาร{shopSettings.bankName || 'กสิกรไทย'}</p>
-                            <p className="text-slate-900 break-words">{shopSettings.bankAccountName || shopSettings.shopName}</p>
-                            <p className="font-bold text-slate-950">พร้อมเพย์ {shopSettings.promptPayId || '0834268058'}</p>
+                            <p className="font-bold text-slate-950 break-words">{shopSettings.bankAccountName || shopSettings.shopName}</p>
+                            <p>พร้อมเพย์ {shopSettings.promptPayId || '0834268058'}</p>
                           </div>
                           {promptPayQrUrl && (
                             <div className="shrink-0 flex flex-col items-center">
-                              <div className="w-[22mm] h-[22mm] p-0.5 bg-white border border-slate-400 flex items-center justify-center">
+                              <div className="w-[20mm] h-[20mm] p-0.5 bg-white border border-slate-400 flex items-center justify-center">
                                 <img src={promptPayQrUrl} alt="PromptPay QR" className="w-full h-full object-contain" />
                               </div>
-                              <span className="text-[9pt] font-bold text-slate-900 mt-0.5">พร้อมเพย์</span>
+                              <span className="text-[9pt] font-normal text-slate-900 mt-1">พร้อมเพย์</span>
                             </div>
                           )}
                         </div>
 
-                        <div className="col-span-6 p-1.5 border border-slate-500 bg-slate-50 space-y-0.5 tabular-nums flex flex-col justify-between">
-                          <div>
+                        <div className="col-span-6 p-2 border border-slate-500 bg-slate-50 space-y-1 tabular-nums font-normal flex flex-col justify-between">
+                          <div className="space-y-0.5">
                             <div className="flex justify-between text-slate-900">
                               <span>รวม ({activeStatementBills.length} บิล)</span>
                               <span>{formatMoneyPlain(statementSubtotal, 2)}</span>
                             </div>
                             {statementDiscount > 0 && (
-                              <div className="flex justify-between text-rose-700 font-bold">
+                              <div className="flex justify-between text-rose-700">
                                 <span>ส่วนลด</span>
                                 <span>-{formatMoneyPlain(statementDiscount, 2)}</span>
                               </div>
                             )}
-                            <div className="flex justify-between items-baseline pt-1 border-t-2 border-slate-800 font-extrabold text-[11pt] text-slate-950">
+                            <div className="flex justify-between items-baseline pt-1 border-t-2 border-slate-800 font-bold text-[10pt] text-slate-950">
                               <span>รวมสุทธิ (บาท)</span>
-                              <span className="text-[12pt]">{formatMoneyPlain(statementGrandTotal, 2)}</span>
+                              <span className="text-[10.5pt]">{formatMoneyPlain(statementGrandTotal, 2)}</span>
                             </div>
                           </div>
-                          <div className="text-right font-bold text-[9.5pt] text-slate-950">
+                          <div className="text-right font-bold text-[9pt] text-slate-950">
                             ({statementBahtText})
                           </div>
                         </div>
@@ -1018,71 +1018,71 @@ export const GovConsolidatedBillingModal: React.FC<GovConsolidatedBillingModalPr
                     </div>
 
                     {/* BOTTOM SECTION: ENLARGED SIGNATURES + CLEAN STUB */}
-                    <div className="mt-auto pt-2 space-y-2 a5-keep-together">
+                    <div className="mt-auto pt-2.5 space-y-2 a5-keep-together">
                       {docType === 'quotation' ? (
-                        <div className="grid grid-cols-2 gap-3 text-center text-[10pt]">
-                          <div className="border border-slate-500 p-2 flex flex-col justify-between min-h-[82px]">
+                        <div className="grid grid-cols-2 gap-3 text-center text-[9pt]">
+                          <div className="a5-sign-box">
                             <p className="font-bold text-slate-950">ผู้เสนอราคา</p>
                             <div className="flex-1" />
                             <p className="font-bold text-slate-950">( ร้านพัทลุงปริ้นเตอร์ )</p>
                           </div>
-                          <div className="border border-slate-500 p-2 flex flex-col justify-between min-h-[82px]">
+                          <div className="a5-sign-box">
                             <p className="font-bold text-slate-950">ผู้อนุมัติ / หน่วยงาน</p>
                             <div className="flex-1" />
                             <p className="font-bold text-slate-950 truncate">( {selectedGroup.agencyName} )</p>
                           </div>
                         </div>
                       ) : docType === 'receipt' ? (
-                        <div className="grid grid-cols-2 gap-3 text-center text-[10pt]">
-                          <div className="border border-slate-500 p-2 flex flex-col justify-between min-h-[82px]">
+                        <div className="grid grid-cols-2 gap-3 text-center text-[9pt]">
+                          <div className="a5-sign-box">
                             <p className="font-bold text-slate-950">ผู้จ่ายเงิน / เจ้าหน้าที่การเงิน</p>
                             <div className="flex-1" />
                             <p className="font-bold text-slate-950 truncate">( {selectedGroup.agencyName} )</p>
                           </div>
-                          <div className="border border-slate-500 p-2 flex flex-col justify-between min-h-[82px]">
+                          <div className="a5-sign-box">
                             <p className="font-bold text-slate-950">ผู้รับเงิน</p>
                             <div className="flex-1" />
                             <p className="font-bold text-slate-950">( ร้านพัทลุงปริ้นเตอร์ )</p>
                           </div>
                         </div>
                       ) : (
-                        <div className="grid grid-cols-3 gap-2 text-center text-[9.5pt]">
-                          <div className="border border-slate-500 p-2 flex flex-col justify-between min-h-[80px]">
+                        <div className="grid grid-cols-3 gap-2 text-center text-[9pt]">
+                          <div className="a5-sign-box">
                             <p className="font-bold text-slate-950">ผู้วางบิล / ผู้ส่งมอบ</p>
                             <div className="flex-1" />
                             <p className="font-bold text-slate-950">( ร้านพัทลุงปริ้นเตอร์ )</p>
                           </div>
-                          <div className="border border-slate-500 p-2 flex flex-col justify-between min-h-[80px]">
+                          <div className="a5-sign-box">
                             <p className="font-bold text-slate-950">ผู้รับวางบิล / พัสดุ</p>
                             <div className="flex-1" />
                             <p className="font-bold text-slate-950 truncate">( {selectedGroup.agencyName} )</p>
                           </div>
-                          <div className="border border-slate-500 p-2 flex flex-col justify-between min-h-[80px]">
+                          <div className="a5-sign-box">
                             <p className="font-bold text-slate-950">กรรมการตรวจรับ</p>
                             <div className="flex-1" />
-                            <p className="font-bold text-slate-950">( .................................... )</p>
+                            <p className="font-normal text-slate-950">( .................................... )</p>
                           </div>
                         </div>
                       )}
 
                       {/* Tear-off Stub: ONLY Doc No, Barcode, Customer/Agency Name */}
-                      <div className="pt-1.5 border-t-2 border-dashed border-slate-500">
+                      <div className="pt-2 border-t-2 border-dashed border-slate-500">
                         <div className="border border-slate-500 px-3 py-2 flex items-center justify-between gap-3">
                           <div className="space-y-1 min-w-0">
-                            <div className="text-[10.5pt] font-extrabold text-slate-950">
+                            <div className="text-[9.5pt] font-bold text-slate-950">
                               เลขที่เอกสาร: <span className="font-mono">{activeStatementDocNo}</span>
                             </div>
-                            <div className="text-[10.5pt] font-bold text-slate-950 truncate">
+                            <div className="text-[9.5pt] font-bold text-slate-950 truncate">
                               ชื่อลูกค้า: {selectedGroup.agencyName}
                             </div>
                           </div>
                           <div className="shrink-0 bg-white px-1">
                             <Barcode
                               value={activeStatementDocNo}
-                              width={1.35}
-                              height={34}
+                              width={1.3}
+                              height={32}
                               displayValue={false}
-                              className="h-[34px] max-w-[200px]"
+                              className="h-[32px] max-w-[190px]"
                             />
                           </div>
                         </div>

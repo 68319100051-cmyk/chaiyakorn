@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ShopSettings } from '../types';
-import { X, Settings, Store, Phone, MessageSquare, ShieldCheck, FileText, Check, CreditCard, Mail, Globe } from 'lucide-react';
+import { DEFAULT_GOV_ALERT_DAYS, normalizeGovAlertDays } from '../utils/govCredit';
+import { X, Store, ShieldCheck, Check, CreditCard, Bell } from 'lucide-react';
 
 interface ShopSettingsModalProps {
   isOpen: boolean;
@@ -15,8 +16,6 @@ export const ShopSettingsModal: React.FC<ShopSettingsModalProps> = ({
   settings,
   onSave
 }) => {
-  if (!isOpen) return null;
-
   const [shopName, setShopName] = useState(settings.shopName);
   const [branch, setBranch] = useState(settings.branch || 'สำนักงานใหญ่');
   const [shopPhone, setShopPhone] = useState(settings.shopPhone);
@@ -31,12 +30,37 @@ export const ShopSettingsModal: React.FC<ShopSettingsModalProps> = ({
   const [bankAccountName, setBankAccountName] = useState(settings.bankAccountName || 'พัทลุงปริ้นเตอร์ คอมพิวเตอร์');
   const [receiptFooterMessage, setReceiptFooterMessage] = useState(settings.receiptFooterMessage);
   const [warrantyTerms, setWarrantyTerms] = useState(settings.warrantyTerms);
-  const [lineNotifyToken, setLineNotifyToken] = useState(settings.lineNotifyToken || '');
-  const [lineNotifyEnabled, setLineNotifyEnabled] = useState(settings.lineNotifyEnabled);
+  const [govAlertDaysInput, setGovAlertDaysInput] = useState(
+    (settings.govAlertDays && settings.govAlertDays.length > 0 ? settings.govAlertDays : DEFAULT_GOV_ALERT_DAYS).join('/')
+  );
   const [savedSuccess, setSavedSuccess] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setShopName(settings.shopName);
+    setBranch(settings.branch || 'สำนักงานใหญ่');
+    setShopPhone(settings.shopPhone);
+    setShopLineId(settings.shopLineId);
+    setEmail(settings.email || 'poi1800@gmail.com');
+    setFacebook(settings.facebook || 'facebook.com/phatthalungprinter');
+    setShopAddress(settings.shopAddress);
+    setTaxId(settings.taxId || '0935562018892');
+    setPromptPayId(settings.promptPayId || '0834268058');
+    setBankName(settings.bankName || 'ธนาคารกสิกรไทย สาขาพัทลุง');
+    setBankAccountNumber(settings.bankAccountNumber || '083-4-26805-8');
+    setBankAccountName(settings.bankAccountName || 'พัทลุงปริ้นเตอร์ คอมพิวเตอร์');
+    setReceiptFooterMessage(settings.receiptFooterMessage);
+    setWarrantyTerms(settings.warrantyTerms);
+    setGovAlertDaysInput(
+      (settings.govAlertDays && settings.govAlertDays.length > 0 ? settings.govAlertDays : DEFAULT_GOV_ALERT_DAYS).join('/')
+    );
+  }, [isOpen, settings]);
+
+  if (!isOpen) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const parsedAlertDays = normalizeGovAlertDays(govAlertDaysInput);
     const updated: ShopSettings = {
       ...settings,
       shopName: shopName.trim(),
@@ -53,8 +77,7 @@ export const ShopSettingsModal: React.FC<ShopSettingsModalProps> = ({
       bankAccountName: bankAccountName.trim() || undefined,
       receiptFooterMessage: receiptFooterMessage.trim(),
       warrantyTerms: warrantyTerms.trim(),
-      lineNotifyToken: lineNotifyToken.trim() || undefined,
-      lineNotifyEnabled,
+      govAlertDays: parsedAlertDays,
       updatedAt: new Date().toISOString()
     };
     onSave(updated);
@@ -295,17 +318,30 @@ export const ShopSettingsModal: React.FC<ShopSettingsModalProps> = ({
             </div>
           </div>
 
-          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-700 space-y-2">
-            <span className="font-bold text-slate-800 dark:text-slate-200 block">
-              LINE Notify Token (ไม่บังคับ)
-            </span>
-            <input
-              type="password"
-              placeholder="ใส่ LINE Notify Token จาก notify-bot.line.me"
-              value={lineNotifyToken}
-              onChange={e => setLineNotifyToken(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-mono"
-            />
+          {/* 4. Government Bill Alert Threshold Settings */}
+          <div className="space-y-3 pt-2">
+            <h4 className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 border-b border-slate-100 dark:border-slate-700 pb-1.5">
+              <Bell className="w-4 h-4 text-amber-500" />
+              <span>ระบบแจ้งเตือนบิลราชการ (เวลาประเทศไทย Asia/Bangkok)</span>
+            </h4>
+
+            <div className="p-3.5 rounded-xl bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/60 space-y-2">
+              <label className="block font-semibold text-slate-700 dark:text-slate-300">
+                จำนวนวันแจ้งเตือนล่วงหน้าก่อนครบกำหนด (คั่นด้วย / หรือ , เช่น 7/3/1)
+              </label>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="text"
+                  value={govAlertDaysInput}
+                  onChange={e => setGovAlertDaysInput(e.target.value)}
+                  placeholder="7/3/1"
+                  className="w-40 px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-amber-300 dark:border-amber-700 font-mono font-bold text-slate-800 dark:text-white"
+                />
+                <span className="text-[11px] text-slate-500">
+                  ค่าที่ใช้งาน: {normalizeGovAlertDays(govAlertDaysInput).join(', ')} วันก่อนครบกำหนด
+                </span>
+              </div>
+            </div>
           </div>
 
           <div className="pt-3 border-t border-slate-100 dark:border-slate-700 flex items-center justify-end gap-2 shrink-0">

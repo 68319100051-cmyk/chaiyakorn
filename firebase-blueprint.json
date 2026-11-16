@@ -7,6 +7,7 @@
       "properties": {
         "id": { "type": "string" },
         "ticketNumber": { "type": "string" },
+        "customerType": { "type": "string", "enum": ["general", "government"] },
         "customerName": { "type": "string" },
         "customerPhone": { "type": "string" },
         "customerLineId": { "type": "string" },
@@ -33,6 +34,7 @@
         "totalAmount": { "type": "number" },
         "isPaid": { "type": "boolean" },
         "paymentMethod": { "type": "string" },
+        "govCreditInfo": { "type": "object" },
         "partsUsed": { "type": "array" },
         "trackingToken": { "type": "string" },
         "lineNotified": { "type": "boolean" },
@@ -41,6 +43,11 @@
         "estimatedCompletionDate": { "type": "string" },
         "completedDate": { "type": "string" },
         "deliveredDate": { "type": "string" },
+        "warrantyDays": { "type": "number" },
+        "warrantyExpiryDate": { "type": "string" },
+        "isWarrantyClaim": { "type": "boolean" },
+        "originalTicketNumber": { "type": "string" },
+        "warrantyClaimNotes": { "type": "string" },
         "createdAt": { "type": "string" },
         "updatedAt": { "type": "string" }
       },
@@ -72,6 +79,31 @@
       },
       "required": ["itemCode", "name", "category", "sellingPrice", "stockQuantity"]
     },
+    "POSSaleRecord": {
+      "title": "POSSaleRecord",
+      "description": "Retail POS sale transaction record.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "receiptNumber": { "type": "string" },
+        "customerType": { "type": "string", "enum": ["general", "government"] },
+        "items": { "type": "array" },
+        "subtotal": { "type": "number" },
+        "discount": { "type": "number" },
+        "discountMode": { "type": "string" },
+        "totalAmount": { "type": "number" },
+        "paymentMethod": { "type": "string" },
+        "amountReceived": { "type": "number" },
+        "change": { "type": "number" },
+        "customerName": { "type": "string" },
+        "customerPhone": { "type": "string" },
+        "cashierName": { "type": "string" },
+        "notes": { "type": "string" },
+        "govCreditInfo": { "type": "object" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["receiptNumber", "totalAmount", "paymentMethod"]
+    },
     "ShopSettings": {
       "title": "ShopSettings",
       "description": "Configuration and details for the repair shop.",
@@ -87,6 +119,7 @@
         "lineNotifyToken": { "type": "string" },
         "lineNotifyEnabled": { "type": "boolean" },
         "warrantyTerms": { "type": "string" },
+        "govAlertDays": { "type": "array" },
         "updatedAt": { "type": "string" }
       },
       "required": ["shopName", "shopPhone"]
@@ -101,9 +134,13 @@
       "schema": { "$ref": "#/entities/InventoryItem" },
       "description": "Inventory stock items for replacement parts, printer ink, and retail products."
     },
+    "/pos_sales/{saleId}": {
+      "schema": { "$ref": "#/entities/POSSaleRecord" },
+      "description": "Point of Sale retail and government credit transactions."
+    },
     "/shop_settings/{settingId}": {
       "schema": { "$ref": "#/entities/ShopSettings" },
-      "description": "Store configuration, contact information, and warranty policies."
+      "description": "Store configuration, contact information, warranty policies, and gov billing alert settings."
     }
   }
 }

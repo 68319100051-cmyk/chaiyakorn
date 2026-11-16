@@ -36,9 +36,12 @@ export interface RepairDeviceItem {
   partsUsed: UsedPart[];
 }
 
+export type CustomerType = 'general' | 'government';
+
 export interface RepairTicket {
   id: string;
   ticketNumber: string;               // เช่น REP-20261026-001
+  customerType?: CustomerType;        // ประเภทลูกค้า: 'general' (ทั่วไป) | 'government' (ราชการ)
   customerName: string;
   customerPhone: string;
   customerLineId?: string;
@@ -129,14 +132,19 @@ export interface GovCreditInfo {
   agencyName: string;            // ชื่อหน่วยงานราชการ / โรงเรียน / อบต. / เทศบาล
   taxId?: string;                // เลขประจำตัวผู้เสียภาษีหน่วยงาน 13 หลัก
   department?: string;           // กอง / ฝ่าย / งานพัสดุ / แผนก
-  orderNumber?: string;          // เลขที่ใบสั่งซื้อ / สั่งจ้าง / ขออนุมัติ (PO No.)
+  orderNumber?: string;          // เลขที่หนังสือ / ใบสั่งซื้อ / สั่งจ้าง / ขออนุมัติ (PO No.)
   contactPerson?: string;        // ผู้ประสานงาน / เจ้าหน้าที่พัสดุ
   contactPhone?: string;         // เบอร์โทรติดต่อ
   creditDays: number;            // จำนวนวันเครดิต (เช่น 15, 30, 45, 60 วัน)
+  billingSubmittedDate?: string; // วันที่ส่งเอกสารเบิก (YYYY-MM-DD)
   dueDate: string;               // วันครบกำหนดชำระเงิน (YYYY-MM-DD)
-  billingStatus: GovBillingStatus; // สถานะการวางบิล: 'pending_billing' (รอวางบิล) | 'billed' (วางบิลแล้ว) | 'paid' (เบิกจ่ายแล้ว)
+  dueDateManualOverride?: boolean; // กำหนดวันครบกำหนดเองหรือไม่
+  billingStatus: GovBillingStatus; // สถานะการวางบิล: 'pending_billing' (รอวางบิล) | 'billed' (วางบิลแล้ว) | 'paid' (รับเงินแล้ว)
   billedDate?: string;           // วันที่วางบิลจริง
   paidDate?: string;             // วันที่ได้รับเงินเบิกจ่าย / เงินโอนเข้า
+  snoozedUntil?: string;         // เลื่อนการแจ้งเตือนจนถึงวันที่ (YYYY-MM-DD เวลาประเทศไทย)
+  snoozedDays?: number;          // จำนวนวันที่เลื่อนล่าสุด (1 / 3 / 7 วัน)
+  snoozedAt?: string;            // เวลาที่กดเลื่อนการแจ้งเตือน (ISO string)
   notes?: string;                // หมายเหตุโครงการ / เลขที่เบิกเงิน
   disbursementNumber?: string;   // เลขที่ฎีกาเบิกจ่าย เช่น "ฎีกาที่ 124/2569" หรือ "ฎีกา อว 0602/..."
   disbursementDate?: string;     // วันที่ทำเรื่องฎีกาเบิกจ่าย
@@ -148,6 +156,7 @@ export interface GovCreditInfo {
 export interface POSSaleRecord {
   id: string;
   receiptNumber: string;
+  customerType?: CustomerType;        // ประเภทลูกค้า: 'general' | 'government'
   items: POSCartItem[];
   subtotal: number;
   discount: number;
@@ -183,6 +192,7 @@ export interface ShopSettings {
   warrantyTerms: string;
   lineNotifyToken?: string;
   lineNotifyEnabled: boolean;
+  govAlertDays?: number[];                // วันแจ้งเตือนล่วงหน้าก่อนครบกำหนด เช่น [7, 3, 1]
   updatedAt: string;
 }
 

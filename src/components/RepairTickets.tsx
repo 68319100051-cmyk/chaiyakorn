@@ -28,18 +28,33 @@ import {
   LayoutGrid,
   List,
   PackageCheck,
-  Layers
+  Layers,
+  Clock,
+  CheckCircle2,
+  AlertTriangle
 } from 'lucide-react';
 import { calculateTicketWarranty } from '../utils/warranty';
-import { getGovCreditDueStatus } from '../utils/govCredit';
+import {
+  DEFAULT_GOV_ALERT_DAYS,
+  getBangkokTodayStr,
+  getEffectiveCustomerType,
+  getGovCreditDueStatus,
+  isGovBillPaid,
+  isGovBillSnoozed,
+  resolveEffectiveGovDueDate
+} from '../utils/govCredit';
 import { getTicketDevices, formatDevicesSummary } from '../utils/ticketDevices';
 import { formatThaiDateFull } from '../utils/printHelpers';
 
 const VIEW_MODE_STORAGE_KEY = 'fixpro_ticket_view_mode';
 
+export type GovFilterType = 'all' | 'gov_all' | 'due_soon' | 'overdue' | 'paid';
+
 interface RepairTicketsProps {
   tickets: RepairTicket[];
-  initialViewPage?: 'active' | 'closed';
+  initialViewPage?: 'active' | 'closed' | 'all';
+  initialGovFilter?: GovFilterType;
+  govAlertDays?: number[];
   onNewTicket: () => void;
   onEditTicket: (ticket: RepairTicket) => void;
   onDeleteTicket: (ticketId: string) => void;
@@ -48,11 +63,15 @@ interface RepairTicketsProps {
   onPrintTicket: (ticket: RepairTicket, docType?: RepairDocumentType) => void;
   onLineNotify: (ticket: RepairTicket) => void;
   onOpenTracking: (ticket: RepairTicket) => void;
+  onMarkGovBillPaid?: (source: 'ticket' | 'pos', id: string, paidDate?: string) => Promise<void> | void;
+  onSnoozeGovBill?: (source: 'ticket' | 'pos', id: string, days: 1 | 3 | 7) => Promise<void> | void;
 }
 
 export const RepairTickets: React.FC<RepairTicketsProps> = ({
   tickets,
   initialViewPage = 'active',
+  initialGovFilter = 'all',
+  govAlertDays = DEFAULT_GOV_ALERT_DAYS,
   onNewTicket,
   onEditTicket,
   onDeleteTicket,
@@ -60,13 +79,16 @@ export const RepairTickets: React.FC<RepairTicketsProps> = ({
   onUpdateDiscount,
   onPrintTicket,
   onLineNotify,
-  onOpenTracking
+  onOpenTracking,
+  onMarkGovBillPaid,
+  onSnoozeGovBill
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDevice, setSelectedDevice] = useState<'all' | DeviceType>('all');
   const [selectedStatus, setSelectedStatus] = useState<'all' | RepairStatus>('all');
   const [warrantyFilter, setWarrantyFilter] = useState<'all' | 'under_warranty' | 'claim'>('all');
-  const [govCreditFilter, setGovCreditFilter] = useState<boolean>(false);
+  const [govFilter, setGovFilter] = useState<GovFilterType>(initialGovFilter);
+  const [snoozeOpenTicketId, setSnoozeOpenTicketId] = useState<string | null>(null);
   const [viewPage, setViewPage] = useState<'active' | 'closed' | 'all'>(initialViewPage);
   const [viewMode, setViewMode] = useState<'cards' | 'table'>(() => {
     try {
@@ -91,6 +113,18 @@ export const RepairTickets: React.FC<RepairTicketsProps> = ({
       setViewPage(initialViewPage);
     }
   }, [initialViewPage]);
+
+  useEffect(() => {
+    if (initialGovFilter) {
+      setGovFilter(initialGovFilter);
+      if (initialGovFilter !== 'all') {
+        setViewPage('all');
+        setSelectedStatus('all');
+      }
+    }
+  }, [initialGovFilter]);
+
+  const bangkokToday = getBangkokTodayStr();
   
   // Quick discount modal state
   const [discountModalTicket, setDiscountModalTicket] = useState<RepairTicket | null>(null);
@@ -112,7 +146,7 @@ export const RepairTickets: React.FC<RepairTicketsProps> = ({
       .reduce((sum, t) => sum + (t.totalAmount || 0), 0);
   }, [tickets]);
 
-  // Warranty and Gov Credit counts
+  // Warranty and Gov Bill counts
   const underWarrantyCount = useMemo(() => {
     return tickets.filter(t => {
       const w = calculateTicketWarranty(t);
@@ -124,9 +158,27 @@ export const RepairTickets: React.FC<RepairTicketsProps> = ({
     return tickets.filter(t => Boolean(t.isWarrantyClaim)).length;
   }, [tickets]);
 
-  const govCreditCount = useMemo(() => {
-    return tickets.filter(t => t.paymentMethod === 'gov_credit').length;
-  }, [tickets]);
+  const govStats = useMemo(() => {
+    let govAll = 0;
+    let dueSoon = 0;
+    let overdue = 0;
+    let paid = 0;
+    for (const t of tickets) {
+      if (t.status === 'cancelled') continue;
+      if (getEffectiveCustomerType(t) !== 'government') continue;
+      govAll += 1;
+      const ticketPaid = isGovBillPaid(t);
+      if (ticketPaid) {
+        paid += 1;
+        continue;
+      }
+      const dueDate = resolveEffectiveGovDueDate(t);
+      const dueInfo = getGovCreditDueStatus(dueDate, t.govCreditInfo?.billingStatus || 'pending_billing', bangkokToday, govAlertDays, t.isPaid);
+      if (dueInfo.status === 'overdue') overdue += 1;
+      else if (dueInfo.status === 'due_soon' || dueInfo.status === 'due_today') dueSoon += 1;
+    }
+    return { govAll, dueSoon, overdue, paid };
+  }, [tickets, bangkokToday, govAlertDays]);
 
   // Filtered tickets with active vs closed page separation
   const filteredTickets = useMemo(() => {
@@ -177,12 +229,45 @@ export const RepairTickets: React.FC<RepairTicketsProps> = ({
         matchWarranty = Boolean(ticket.isWarrantyClaim);
       }
 
-      // 6. Gov Credit filter
-      const matchGovCredit = !govCreditFilter || ticket.paymentMethod === 'gov_credit';
+      // 6. Gov Bill filter
+      let matchGov = true;
+      if (govFilter !== 'all') {
+        if (ticket.status === 'cancelled' || getEffectiveCustomerType(ticket) !== 'government') {
+          matchGov = false;
+        } else if (govFilter === 'paid') {
+          matchGov = isGovBillPaid(ticket);
+        } else if (govFilter === 'due_soon') {
+          if (isGovBillPaid(ticket)) {
+            matchGov = false;
+          } else {
+            const dueStatus = getGovCreditDueStatus(
+              resolveEffectiveGovDueDate(ticket),
+              ticket.govCreditInfo?.billingStatus || 'pending_billing',
+              bangkokToday,
+              govAlertDays,
+              ticket.isPaid
+            );
+            matchGov = dueStatus.status === 'due_soon' || dueStatus.status === 'due_today';
+          }
+        } else if (govFilter === 'overdue') {
+          if (isGovBillPaid(ticket)) {
+            matchGov = false;
+          } else {
+            const dueStatus = getGovCreditDueStatus(
+              resolveEffectiveGovDueDate(ticket),
+              ticket.govCreditInfo?.billingStatus || 'pending_billing',
+              bangkokToday,
+              govAlertDays,
+              ticket.isPaid
+            );
+            matchGov = dueStatus.status === 'overdue';
+          }
+        }
+      }
 
-      return matchSearch && matchDevice && matchStatus && matchWarranty && matchGovCredit;
+      return matchSearch && matchDevice && matchStatus && matchWarranty && matchGov;
     });
-  }, [tickets, searchTerm, selectedDevice, selectedStatus, warrantyFilter, govCreditFilter, viewPage]);
+  }, [tickets, searchTerm, selectedDevice, selectedStatus, warrantyFilter, govFilter, viewPage, bangkokToday, govAlertDays]);
 
   // Dynamic status options depending on active page vs closed page
   const statusOptions = useMemo(() => {
@@ -481,18 +566,61 @@ export const RepairTickets: React.FC<RepairTicketsProps> = ({
           >
             <span>งานเคลมประกัน ({warrantyClaimCount})</span>
           </button>
-          <div className="w-[1px] h-4 bg-slate-200 dark:bg-slate-700 mx-1"></div>
-          <button
-            onClick={() => setGovCreditFilter(prev => !prev)}
-            className={`px-2.5 py-1 rounded-full whitespace-nowrap transition-all flex items-center gap-1 cursor-pointer ${
-              govCreditFilter
-                ? 'bg-indigo-600 text-white font-bold shadow-xs'
-                : 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100'
-            }`}
-          >
-            <Building2 className="w-3.5 h-3.5" />
-            <span>🏛️ เครดิตราชการ ({govCreditCount})</span>
-          </button>
+        </div>
+
+        {/* Government Bill Filter Pills */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs border-t border-slate-100 dark:border-slate-800 pt-2">
+          <span className="text-slate-400 text-[11px] font-semibold uppercase mr-1 flex items-center gap-1 whitespace-nowrap">
+            <Building2 className="w-3.5 h-3.5 text-purple-500" />
+            <span>บิลราชการ:</span>
+          </span>
+          {(
+            [
+              { key: 'all', label: 'ทั้งหมด' },
+              { key: 'gov_all', label: `บิลราชการทั้งหมด (${govStats.govAll})` },
+              { key: 'due_soon', label: `ใกล้ครบกำหนด (${govStats.dueSoon})` },
+              { key: 'overdue', label: `เกินกำหนด (${govStats.overdue})` },
+              { key: 'paid', label: `รับเงินแล้ว (${govStats.paid})` }
+            ] as { key: GovFilterType; label: string }[]
+          ).map(opt => {
+            const active = govFilter === opt.key;
+            const activeClass =
+              opt.key === 'overdue'
+                ? 'bg-rose-600 text-white font-bold shadow-xs'
+                : opt.key === 'due_soon'
+                ? 'bg-amber-500 text-white font-bold shadow-xs'
+                : opt.key === 'paid'
+                ? 'bg-emerald-600 text-white font-bold shadow-xs'
+                : opt.key === 'gov_all'
+                ? 'bg-purple-600 text-white font-bold shadow-xs'
+                : 'bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900 font-bold';
+            const inactiveClass =
+              opt.key === 'overdue'
+                ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 hover:bg-rose-100'
+                : opt.key === 'due_soon'
+                ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 hover:bg-amber-100'
+                : opt.key === 'paid'
+                ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200';
+            return (
+              <button
+                key={opt.key}
+                type="button"
+                onClick={() => {
+                  setGovFilter(opt.key);
+                  if (opt.key !== 'all') {
+                    setViewPage('all');
+                    setSelectedStatus('all');
+                  }
+                }}
+                className={`px-2.5 py-1 rounded-full whitespace-nowrap transition-all cursor-pointer ${
+                  active ? activeClass : inactiveClass
+                }`}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -528,7 +656,7 @@ export const RepairTickets: React.FC<RepairTicketsProps> = ({
                     setSelectedDevice('all');
                     setSelectedStatus('all');
                     setWarrantyFilter('all');
-                    setGovCreditFilter(false);
+                    setGovFilter('all');
                   }}
                   className="px-4 py-2 rounded-lg bg-slate-100 dark:bg-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-200 cursor-pointer"
                 >
@@ -597,12 +725,40 @@ export const RepairTickets: React.FC<RepairTicketsProps> = ({
                         <div className="text-[11px] text-slate-500 font-mono mt-0.5">
                           {ticket.customerPhone}
                         </div>
-                        {ticket.paymentMethod === 'gov_credit' && (
-                          <span className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.2 rounded text-[10px] font-bold bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300">
-                            <Building2 className="w-2.5 h-2.5" />
-                            <span>ราชการ</span>
-                          </span>
-                        )}
+                        {getEffectiveCustomerType(ticket) === 'government' && (() => {
+                          const paid = isGovBillPaid(ticket);
+                          const dueDate = resolveEffectiveGovDueDate(ticket);
+                          const dueInfo = getGovCreditDueStatus(
+                            dueDate,
+                            paid ? 'paid' : (ticket.govCreditInfo?.billingStatus || 'pending_billing'),
+                            bangkokToday,
+                            govAlertDays,
+                            ticket.isPaid
+                          );
+                          const snoozed = !paid && isGovBillSnoozed(ticket.govCreditInfo, bangkokToday);
+                          return (
+                            <div className="mt-1 flex flex-col items-start gap-1">
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] font-bold bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300">
+                                <Building2 className="w-2.5 h-2.5" />
+                                <span>{ticket.govCreditInfo?.agencyName || 'ราชการ'}</span>
+                              </span>
+                              <span className={`inline-flex items-center px-1.5 py-0.2 rounded border text-[10px] ${dueInfo.badgeClass}`}>
+                                {dueInfo.badgeLabel}
+                              </span>
+                              {dueDate && !paid && (
+                                <span className="text-[10px] text-slate-500">
+                                  ครบกำหนด: {formatThaiDateFull(dueDate)}
+                                </span>
+                              )}
+                              {snoozed && ticket.govCreditInfo?.snoozedUntil && (
+                                <span className="text-[10px] text-slate-500 flex items-center gap-0.5">
+                                  <Clock className="w-2.5 h-2.5" />
+                                  <span>เลื่อนถึง {formatThaiDateFull(ticket.govCreditInfo.snoozedUntil)}</span>
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </td>
 
                       {/* 3. Devices (supports N devices) */}
@@ -672,62 +828,109 @@ export const RepairTickets: React.FC<RepairTicketsProps> = ({
 
                       {/* 8. Action Buttons */}
                       <td className="py-3 px-3.5 align-top text-center whitespace-nowrap" onClick={e => e.stopPropagation()}>
-                        <div className="flex items-center justify-center gap-1">
-                          <button
-                            onClick={() => onPrintTicket(ticket)}
-                            title="พิมพ์เอกสาร (A5)"
-                            className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 text-slate-700 dark:text-slate-200 text-[11px] font-semibold inline-flex items-center gap-1 cursor-pointer"
-                          >
-                            <PrintIcon className="w-3.5 h-3.5" />
-                            <span>พิมพ์</span>
-                          </button>
-
-                          {canDeliveryNote && (
+                        <div className="flex flex-col items-center gap-1">
+                          <div className="flex items-center justify-center gap-1">
                             <button
-                              onClick={() => onPrintTicket(ticket, 'delivery_note')}
-                              title="พิมพ์ใบส่งมอบของ"
-                              className="px-2 py-1 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-bold inline-flex items-center gap-1 cursor-pointer"
+                              onClick={() => onPrintTicket(ticket)}
+                              title="พิมพ์เอกสาร (A5)"
+                              className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 text-slate-700 dark:text-slate-200 text-[11px] font-semibold inline-flex items-center gap-1 cursor-pointer"
                             >
-                              <PackageCheck className="w-3.5 h-3.5" />
-                              <span>ใบส่งมอบของ</span>
+                              <PrintIcon className="w-3.5 h-3.5" />
+                              <span>พิมพ์</span>
                             </button>
+
+                            {canDeliveryNote && (
+                              <button
+                                onClick={() => onPrintTicket(ticket, 'delivery_note')}
+                                title="พิมพ์ใบส่งมอบของ"
+                                className="px-2 py-1 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-bold inline-flex items-center gap-1 cursor-pointer"
+                              >
+                                <PackageCheck className="w-3.5 h-3.5" />
+                                <span>ใบส่งมอบของ</span>
+                              </button>
+                            )}
+
+                            <button
+                              onClick={() => onLineNotify(ticket)}
+                              title="แจ้ง LINE"
+                              className="p-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 text-emerald-700 dark:text-emerald-300 cursor-pointer"
+                            >
+                              <MessageSquare className="w-3.5 h-3.5" />
+                            </button>
+
+                            <button
+                              onClick={() => onOpenTracking(ticket)}
+                              title="เช็คสถานะออนไลน์"
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-700 cursor-pointer"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                            </button>
+
+                            <button
+                              onClick={() => onEditTicket(ticket)}
+                              title="เปิดบิล / แก้ไข"
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+
+                            <button
+                              onClick={() => {
+                                if (confirm(`ต้องการลบใบรับซ่อม ${ticket.ticketNumber} ของคุณ ${ticket.customerName} หรือไม่?`)) {
+                                  onDeleteTicket(ticket.id);
+                                }
+                              }}
+                              title="ลบ"
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+
+                          {getEffectiveCustomerType(ticket) === 'government' && !isGovBillPaid(ticket) && ticket.status !== 'cancelled' && (
+                            <div className="flex items-center gap-1 flex-wrap justify-center">
+                              {onMarkGovBillPaid && (
+                                <button
+                                  type="button"
+                                  onClick={() => onMarkGovBillPaid('ticket', ticket.id, bangkokToday)}
+                                  className="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold inline-flex items-center gap-0.5 cursor-pointer"
+                                >
+                                  <CheckCircle2 className="w-3 h-3" />
+                                  <span>รับเงินแล้ว</span>
+                                </button>
+                              )}
+                              {onSnoozeGovBill && (
+                                <div className="inline-flex items-center gap-0.5">
+                                  {snoozeOpenTicketId === ticket.id ? (
+                                    <>
+                                      {([1, 3, 7] as const).map(d => (
+                                        <button
+                                          key={d}
+                                          type="button"
+                                          onClick={async () => {
+                                            await onSnoozeGovBill('ticket', ticket.id, d);
+                                            setSnoozeOpenTicketId(null);
+                                          }}
+                                          className="px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900 text-amber-900 dark:text-amber-200 text-[10px] font-bold hover:bg-amber-200 cursor-pointer"
+                                        >
+                                          {d}ว.
+                                        </button>
+                                      ))}
+                                    </>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => setSnoozeOpenTicketId(ticket.id)}
+                                      className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-[10px] font-semibold hover:bg-slate-200 inline-flex items-center gap-0.5 cursor-pointer"
+                                    >
+                                      <Clock className="w-2.5 h-2.5" />
+                                      <span>เลื่อน</span>
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
                           )}
-
-                          <button
-                            onClick={() => onLineNotify(ticket)}
-                            title="แจ้ง LINE"
-                            className="p-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 text-emerald-700 dark:text-emerald-300 cursor-pointer"
-                          >
-                            <MessageSquare className="w-3.5 h-3.5" />
-                          </button>
-
-                          <button
-                            onClick={() => onOpenTracking(ticket)}
-                            title="เช็คสถานะออนไลน์"
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-700 cursor-pointer"
-                          >
-                            <ExternalLink className="w-3.5 h-3.5" />
-                          </button>
-
-                          <button
-                            onClick={() => onEditTicket(ticket)}
-                            title="แก้ไข"
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer"
-                          >
-                            <Edit3 className="w-3.5 h-3.5" />
-                          </button>
-
-                          <button
-                            onClick={() => {
-                              if (confirm(`ต้องการลบใบรับซ่อม ${ticket.ticketNumber} ของคุณ ${ticket.customerName} หรือไม่?`)) {
-                                onDeleteTicket(ticket.id);
-                              }
-                            }}
-                            title="ลบ"
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
                         </div>
                       </td>
                     </tr>
@@ -832,27 +1035,54 @@ export const RepairTickets: React.FC<RepairTicketsProps> = ({
                     </div>
 
                     {/* Government Credit Status Pill */}
-                    {ticket.paymentMethod === 'gov_credit' && (
-                      <div className="mt-2 flex items-center gap-1.5 flex-wrap">
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 dark:bg-purple-950 text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
-                          <Building2 className="w-3 h-3 text-purple-600" />
-                          <span>{ticket.govCreditInfo?.agencyName || 'เครดิตราชการ'}</span>
-                        </span>
-                        {ticket.govCreditInfo?.dueDate && (() => {
-                          const dueStatus = getGovCreditDueStatus(ticket.govCreditInfo.dueDate, ticket.govCreditInfo.billingStatus);
-                          return (
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border ${dueStatus.badgeClass}`}>
+                    {getEffectiveCustomerType(ticket) === 'government' && (() => {
+                      const paid = isGovBillPaid(ticket);
+                      const dueDate = resolveEffectiveGovDueDate(ticket);
+                      const dueStatus = getGovCreditDueStatus(
+                        dueDate,
+                        paid ? 'paid' : (ticket.govCreditInfo?.billingStatus || 'pending_billing'),
+                        bangkokToday,
+                        govAlertDays,
+                        ticket.isPaid
+                      );
+                      const snoozed = !paid && isGovBillSnoozed(ticket.govCreditInfo, bangkokToday);
+                      return (
+                        <div className="mt-2 space-y-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 dark:bg-purple-950 text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                              <Building2 className="w-3 h-3 text-purple-600" />
+                              <span>{ticket.govCreditInfo?.agencyName || 'หน่วยงานราชการ'}</span>
+                            </span>
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] border ${dueStatus.badgeClass}`}>
                               {dueStatus.badgeLabel}
                             </span>
-                          );
-                        })()}
-                        {ticket.govCreditInfo?.disbursementNumber && (
-                          <span className="text-[10px] font-mono text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 px-1.5 py-0.5 rounded border border-indigo-200 dark:border-indigo-800 font-semibold">
-                            {ticket.govCreditInfo.disbursementNumber}
-                          </span>
-                        )}
-                      </div>
-                    )}
+                            {ticket.govCreditInfo?.orderNumber && (
+                              <span className="text-[10px] font-mono text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 px-1.5 py-0.5 rounded border border-indigo-200 dark:border-indigo-800 font-semibold">
+                                {ticket.govCreditInfo.orderNumber}
+                              </span>
+                            )}
+                          </div>
+                          {(dueDate || snoozed || paid) && (
+                            <div className="flex items-center gap-2 text-[10px] text-slate-500 flex-wrap">
+                              {dueDate && !paid && (
+                                <span>ครบกำหนด: {formatThaiDateFull(dueDate)}</span>
+                              )}
+                              {paid && ticket.govCreditInfo?.paidDate && (
+                                <span className="text-emerald-700 dark:text-emerald-300 font-semibold">
+                                  รับเงินวันที่ {formatThaiDateFull(ticket.govCreditInfo.paidDate)}
+                                </span>
+                              )}
+                              {snoozed && ticket.govCreditInfo?.snoozedUntil && (
+                                <span className="inline-flex items-center gap-0.5 text-amber-700 dark:text-amber-300 font-medium">
+                                  <Clock className="w-2.5 h-2.5" />
+                                  <span>เลื่อนแจ้งเตือนถึง {formatThaiDateFull(ticket.govCreditInfo.snoozedUntil)}</span>
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {/* Device & Problem Details */}
@@ -979,6 +1209,66 @@ export const RepairTickets: React.FC<RepairTicketsProps> = ({
                       <option value="cancelled">ยกเลิก / ซ่อมไม่ได้</option>
                     </select>
                   </div>
+
+                  {/* Per-Bill Government Quick Actions (in Card View) */}
+                  {getEffectiveCustomerType(ticket) === 'government' && !isGovBillPaid(ticket) && ticket.status !== 'cancelled' && (
+                    <div className="flex items-center justify-between gap-1.5 pt-1 border-t border-slate-200/70 dark:border-slate-700/70 flex-wrap">
+                      <div className="flex items-center gap-1 flex-wrap">
+                        {onMarkGovBillPaid && (
+                          <button
+                            type="button"
+                            onClick={() => onMarkGovBillPaid('ticket', ticket.id, bangkokToday)}
+                            className="flex items-center gap-1 px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold cursor-pointer transition-colors"
+                          >
+                            <CheckCircle2 className="w-3 h-3" />
+                            <span>บันทึกรับเงินแล้ว</span>
+                          </button>
+                        )}
+                        {onSnoozeGovBill && (
+                          snoozeOpenTicketId === ticket.id ? (
+                            <div className="flex items-center gap-1">
+                              {([1, 3, 7] as const).map(d => (
+                                <button
+                                  key={d}
+                                  type="button"
+                                  onClick={async () => {
+                                    await onSnoozeGovBill('ticket', ticket.id, d);
+                                    setSnoozeOpenTicketId(null);
+                                  }}
+                                  className="px-2 py-1 rounded bg-amber-100 dark:bg-amber-900 hover:bg-amber-200 text-amber-900 dark:text-amber-200 text-[11px] font-bold cursor-pointer"
+                                >
+                                  {d} วัน
+                                </button>
+                              ))}
+                              <button
+                                type="button"
+                                onClick={() => setSnoozeOpenTicketId(null)}
+                                className="px-1.5 py-1 text-[10px] text-slate-400 hover:text-slate-600 cursor-pointer"
+                              >
+                                ปิด
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setSnoozeOpenTicketId(ticket.id)}
+                              className="flex items-center gap-1 px-2 py-1 rounded bg-amber-50 dark:bg-amber-950/60 hover:bg-amber-100 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 text-[11px] font-semibold cursor-pointer"
+                            >
+                              <Clock className="w-3 h-3" />
+                              <span>เลื่อนแจ้งเตือน</span>
+                            </button>
+                          )
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => onEditTicket(ticket)}
+                        className="px-2 py-1 rounded bg-purple-100 dark:bg-purple-950/70 hover:bg-purple-200 text-purple-800 dark:text-purple-200 text-[11px] font-bold cursor-pointer"
+                      >
+                        เปิดบิล
+                      </button>
+                    </div>
+                  )}
 
                   {/* Action Buttons */}
                   <div className="flex items-center justify-between pt-1 flex-wrap gap-1">

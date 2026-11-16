@@ -7,6 +7,7 @@ import {
   RepairDocumentType
 } from '../types';
 import { getTicketDevices, formatDevicesSummary } from '../utils/ticketDevices';
+import { getBangkokTodayStr, getEffectiveCustomerType, isGovBillPaid } from '../utils/govCredit';
 import {
   Wrench,
   Clock,
@@ -54,14 +55,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onViewInventory,
   onOpenGovBilling
 }) => {
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getBangkokTodayStr();
 
   // Government Credit pending bills count & sum
   const pendingGovTickets = tickets.filter(
-    t => t.paymentMethod === 'gov_credit' && t.govCreditInfo?.billingStatus !== 'paid'
+    t => t.status !== 'cancelled' && getEffectiveCustomerType(t) === 'government' && !isGovBillPaid(t)
   );
   const pendingGovSales = (posSales || []).filter(
-    s => s.paymentMethod === 'gov_credit' && s.govCreditInfo?.billingStatus !== 'paid'
+    s => getEffectiveCustomerType(s) === 'government' && !isGovBillPaid({ govCreditInfo: s.govCreditInfo })
   );
   const pendingGovBillsCount = pendingGovTickets.length + pendingGovSales.length;
   const pendingGovAmount =
@@ -381,7 +382,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   <button
                     onClick={() => onPrintTicket(ticket)}
                     className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
-                    title="พิมพ์ใบเสร็จ/ส่งมอบ"
+                    title="พิมพ์เอกสาร"
                   >
                     <PrintIcon className="w-4 h-4" />
                   </button>

@@ -23,6 +23,7 @@ export const INITIAL_SHOP_SETTINGS: ShopSettings = {
 4. รับประกันงานซ่อมและอะไหล่แท้ พร้อมทีมงานบริการหลังการขาย`,
   lineNotifyToken: '',
   lineNotifyEnabled: true,
+  govAlertDays: [7, 3, 1],
   updatedAt: new Date().toISOString()
 };
 
@@ -317,6 +318,7 @@ export const INITIAL_TICKETS: RepairTicket[] = [
     discount: 0,
     totalAmount: 540,
     isPaid: false,
+    customerType: 'government',
     paymentMethod: 'gov_credit',
     govCreditInfo: {
       agencyName: 'สำนักงานเทศบาลตำบลเมืองพัทลุง',
@@ -326,6 +328,7 @@ export const INITIAL_TICKETS: RepairTicket[] = [
       contactPerson: 'นายธีระพล พรหมเกิด (ช่างโยธา)',
       contactPhone: '083-426-8058',
       creditDays: 30,
+      billingSubmittedDate: '2026-10-26',
       dueDate: '2026-11-25',
       billingStatus: 'pending_billing',
       notes: 'โครงการบำรุงรักษาเครื่องคอมพิวเตอร์และอุปกรณ์สำนักงาน เทศบาลเมืองพัทลุง'
@@ -373,6 +376,7 @@ export const INITIAL_TICKETS: RepairTicket[] = [
     discount: 0,
     totalAmount: 500,
     isPaid: false,
+    customerType: 'government',
     paymentMethod: 'gov_credit',
     govCreditInfo: {
       agencyName: 'โรงเรียนพัทลุง',
@@ -382,6 +386,7 @@ export const INITIAL_TICKETS: RepairTicket[] = [
       contactPerson: 'ครูสมปอง สุวรรณโณ',
       contactPhone: '074-613-025',
       creditDays: 30,
+      billingSubmittedDate: '2026-10-27',
       dueDate: '2026-11-15',
       billingStatus: 'billed',
       billedDate: '2026-10-27',

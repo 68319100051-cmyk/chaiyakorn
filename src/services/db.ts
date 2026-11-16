@@ -9,8 +9,14 @@ import {
   onSnapshot
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase/config';
-import { RepairTicket, InventoryItem, ShopSettings, POSSaleRecord } from '../types';
+import { RepairTicket, InventoryItem, ShopSettings, POSSaleRecord, GovCreditInfo } from '../types';
 import { INITIAL_TICKETS, INITIAL_INVENTORY, INITIAL_SHOP_SETTINGS } from '../utils/mockSeedData';
+import {
+  addDaysToDateStr,
+  getBangkokTodayStr,
+  getEffectiveCustomerType,
+  resolveEffectiveGovDueDate
+} from '../utils/govCredit';
 
 const LOCAL_STORAGE_KEYS = {
   TICKETS: 'fixpro_repair_tickets',
@@ -59,6 +65,79 @@ export function cleanFirestoreData<T>(obj: T): T {
     return cleaned as T;
   }
   return obj;
+}
+
+/**
+ * Non-destructive backward-compatible normalization for legacy RepairTicket records.
+ */
+export function migrateLegacyTicket(ticket: RepairTicket): RepairTicket {
+  const customerType = getEffectiveCustomerType(ticket);
+  if (customerType !== 'government') {
+    return ticket.customerType ? ticket : { ...ticket, customerType: 'general' };
+  }
+  const existingInfo = ticket.govCreditInfo;
+  const billingSubmittedDate =
+    existingInfo?.billingSubmittedDate ||
+    existingInfo?.billedDate ||
+    ticket.deliveredDate ||
+    ticket.receivedDate;
+  const dueDate = resolveEffectiveGovDueDate(ticket);
+  const billingStatus =
+    existingInfo?.billingStatus || (ticket.isPaid ? 'paid' : 'pending_billing');
+  const nextGovInfo: GovCreditInfo = {
+    ...(existingInfo || {
+      agencyName: ticket.customerName,
+      creditDays: 30,
+      dueDate,
+      billingStatus
+    }),
+    agencyName: existingInfo?.agencyName || ticket.customerName,
+    creditDays: existingInfo?.creditDays || 30,
+    billingSubmittedDate: billingSubmittedDate || undefined,
+    dueDate,
+    billingStatus
+  };
+  return {
+    ...ticket,
+    customerType: 'government',
+    isPaid: billingStatus === 'paid' ? true : ticket.isPaid,
+    govCreditInfo: nextGovInfo
+  };
+}
+
+/**
+ * Non-destructive backward-compatible normalization for legacy POSSaleRecord records.
+ */
+export function migrateLegacyPOSSale(sale: POSSaleRecord): POSSaleRecord {
+  const customerType = getEffectiveCustomerType(sale);
+  if (customerType !== 'government') {
+    return sale.customerType ? sale : { ...sale, customerType: 'general' };
+  }
+  const existingInfo = sale.govCreditInfo;
+  const billingSubmittedDate =
+    existingInfo?.billingSubmittedDate ||
+    existingInfo?.billedDate ||
+    (sale.createdAt ? getBangkokTodayStr(new Date(sale.createdAt)) : getBangkokTodayStr());
+  const dueDate = resolveEffectiveGovDueDate(sale);
+  const billingStatus = existingInfo?.billingStatus || 'pending_billing';
+  const nextGovInfo: GovCreditInfo = {
+    ...(existingInfo || {
+      agencyName: sale.customerName || 'หน่วยงานราชการ',
+      creditDays: 30,
+      dueDate,
+      billingStatus
+    }),
+    agencyName: existingInfo?.agencyName || sale.customerName || 'หน่วยงานราชการ',
+    creditDays: existingInfo?.creditDays || 30,
+    billingSubmittedDate: billingSubmittedDate || undefined,
+    dueDate,
+    billingStatus
+  };
+  return {
+    ...sale,
+    customerType: 'government',
+    govCreditInfo: nextGovInfo
+  };
 }
 
 class DatabaseService {
@@ -158,8 +237,8 @@ class DatabaseService {
   subscribeTickets(callback: (tickets: RepairTicket[]) => void): () => void {
     this.ticketSubscribers.add(callback);
 
-    // Provide immediate initial data from local storage
-    const initialLocal = getLocal<RepairTicket[]>(LOCAL_STORAGE_KEYS.TICKETS, INITIAL_TICKETS);
+    // Provide immediate initial data from local storage (migrated safely in-memory)
+    const initialLocal = getLocal<RepairTicket[]>(LOCAL_STORAGE_KEYS.TICKETS, INITIAL_TICKETS).map(migrateLegacyTicket);
     callback(initialLocal);
 
     let unsubFirestore = () => {};
@@ -170,20 +249,20 @@ class DatabaseService {
           if (!snapshot.empty) {
             const list: RepairTicket[] = [];
             snapshot.forEach((docSnap) => {
-              list.push(docSnap.data() as RepairTicket);
+              list.push(migrateLegacyTicket(docSnap.data() as RepairTicket));
             });
             // Sort by createdAt descending
             list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
             setLocal(LOCAL_STORAGE_KEYS.TICKETS, list);
             this.notifyTickets(list);
           } else {
-            const local = getLocal<RepairTicket[]>(LOCAL_STORAGE_KEYS.TICKETS, INITIAL_TICKETS);
+            const local = getLocal<RepairTicket[]>(LOCAL_STORAGE_KEYS.TICKETS, INITIAL_TICKETS).map(migrateLegacyTicket);
             this.notifyTickets(local);
           }
         },
         (error) => {
           console.warn('Snapshot error on repair_tickets:', error);
-          const local = getLocal<RepairTicket[]>(LOCAL_STORAGE_KEYS.TICKETS, INITIAL_TICKETS);
+          const local = getLocal<RepairTicket[]>(LOCAL_STORAGE_KEYS.TICKETS, INITIAL_TICKETS).map(migrateLegacyTicket);
           this.notifyTickets(local);
         }
       );
@@ -276,7 +355,7 @@ class DatabaseService {
   subscribePOSSales(callback: (sales: POSSaleRecord[]) => void): () => void {
     this.posSalesSubscribers.add(callback);
 
-    const initialLocal = getLocal<POSSaleRecord[]>(LOCAL_STORAGE_KEYS.POS_SALES, []);
+    const initialLocal = getLocal<POSSaleRecord[]>(LOCAL_STORAGE_KEYS.POS_SALES, []).map(migrateLegacyPOSSale);
     callback(initialLocal);
 
     let unsubFirestore = () => {};
@@ -287,19 +366,19 @@ class DatabaseService {
           if (!snapshot.empty) {
             const list: POSSaleRecord[] = [];
             snapshot.forEach((docSnap) => {
-              list.push(docSnap.data() as POSSaleRecord);
+              list.push(migrateLegacyPOSSale(docSnap.data() as POSSaleRecord));
             });
             list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
             setLocal(LOCAL_STORAGE_KEYS.POS_SALES, list);
             this.notifyPOSSales(list);
           } else {
-            const local = getLocal<POSSaleRecord[]>(LOCAL_STORAGE_KEYS.POS_SALES, []);
+            const local = getLocal<POSSaleRecord[]>(LOCAL_STORAGE_KEYS.POS_SALES, []).map(migrateLegacyPOSSale);
             this.notifyPOSSales(local);
           }
         },
         (error) => {
           console.warn('Snapshot error on pos_sales:', error);
-          const local = getLocal<POSSaleRecord[]>(LOCAL_STORAGE_KEYS.POS_SALES, []);
+          const local = getLocal<POSSaleRecord[]>(LOCAL_STORAGE_KEYS.POS_SALES, []).map(migrateLegacyPOSSale);
           this.notifyPOSSales(local);
         }
       );
@@ -350,9 +429,9 @@ class DatabaseService {
       updatePayload.status = status;
     }
     if (status === 'repaired' || status === 'ready_pickup') {
-      updatePayload.completedDate = extraData.completedDate || new Date().toISOString().split('T')[0];
+      updatePayload.completedDate = extraData.completedDate || getBangkokTodayStr();
     } else if (status === 'completed') {
-      updatePayload.deliveredDate = extraData.deliveredDate || new Date().toISOString().split('T')[0];
+      updatePayload.deliveredDate = extraData.deliveredDate || getBangkokTodayStr();
       if (extraData.isPaid === undefined) {
         updatePayload.isPaid = true;
       }
@@ -381,6 +460,7 @@ class DatabaseService {
     billingStatus: import('../types').GovBillingStatus,
     extra?: {
       billedDate?: string;
+      billingSubmittedDate?: string;
       paidDate?: string;
       notes?: string;
       disbursementNumber?: string;
@@ -388,46 +468,64 @@ class DatabaseService {
       transferRef?: string;
       creditDays?: number;
       dueDate?: string;
+      snoozedUntil?: string;
+      snoozedDays?: number;
+      snoozedAt?: string;
     }
   ): Promise<void> {
     const local = getLocal<RepairTicket[]>(LOCAL_STORAGE_KEYS.TICKETS, INITIAL_TICKETS);
     const idx = local.findIndex(t => t.id === ticketId);
     if (idx >= 0) {
-      const existing = local[idx];
-      const now = new Date().toISOString().split('T')[0];
-      const updatedGovInfo = existing.govCreditInfo
-        ? {
-            ...existing.govCreditInfo,
-            billingStatus,
-            ...(billingStatus === 'billed' && !existing.govCreditInfo.billedDate ? { billedDate: now } : {}),
-            ...(billingStatus === 'paid' && !existing.govCreditInfo.paidDate ? { paidDate: now } : {}),
-            ...(extra?.billedDate ? { billedDate: extra.billedDate } : {}),
-            ...(extra?.paidDate ? { paidDate: extra.paidDate } : {}),
-            ...(extra?.notes !== undefined ? { notes: extra.notes } : {}),
-            ...(extra?.disbursementNumber !== undefined ? { disbursementNumber: extra.disbursementNumber } : {}),
-            ...(extra?.disbursementDate !== undefined ? { disbursementDate: extra.disbursementDate } : {}),
-            ...(extra?.transferRef !== undefined ? { transferRef: extra.transferRef } : {}),
-            ...(extra?.creditDays !== undefined ? { creditDays: extra.creditDays } : {}),
-            ...(extra?.dueDate !== undefined ? { dueDate: extra.dueDate } : {})
-          }
-        : undefined;
+      const existing = migrateLegacyTicket(local[idx]);
+      const bangkokToday = getBangkokTodayStr();
+      const baseGovInfo: GovCreditInfo = existing.govCreditInfo || {
+        agencyName: existing.customerName,
+        creditDays: 30,
+        dueDate: resolveEffectiveGovDueDate(existing),
+        billingStatus
+      };
+      const updatedGovInfo: GovCreditInfo = {
+        ...baseGovInfo,
+        billingStatus,
+        ...(billingStatus === 'billed' && !baseGovInfo.billedDate ? { billedDate: bangkokToday } : {}),
+        ...(billingStatus === 'paid' && !baseGovInfo.paidDate ? { paidDate: bangkokToday } : {}),
+        ...(extra?.billedDate ? { billedDate: extra.billedDate } : {}),
+        ...(extra?.billingSubmittedDate ? { billingSubmittedDate: extra.billingSubmittedDate } : {}),
+        ...(extra?.paidDate ? { paidDate: extra.paidDate } : {}),
+        ...(extra?.notes !== undefined ? { notes: extra.notes } : {}),
+        ...(extra?.disbursementNumber !== undefined ? { disbursementNumber: extra.disbursementNumber } : {}),
+        ...(extra?.disbursementDate !== undefined ? { disbursementDate: extra.disbursementDate } : {}),
+        ...(extra?.transferRef !== undefined ? { transferRef: extra.transferRef } : {}),
+        ...(extra?.creditDays !== undefined ? { creditDays: extra.creditDays } : {}),
+        ...(extra?.dueDate !== undefined ? { dueDate: extra.dueDate } : {}),
+        ...(extra?.snoozedUntil !== undefined ? { snoozedUntil: extra.snoozedUntil } : {}),
+        ...(extra?.snoozedDays !== undefined ? { snoozedDays: extra.snoozedDays } : {}),
+        ...(extra?.snoozedAt !== undefined ? { snoozedAt: extra.snoozedAt } : {})
+      };
+
+      if (billingStatus === 'paid') {
+        delete updatedGovInfo.snoozedUntil;
+        delete updatedGovInfo.snoozedDays;
+      }
 
       const updatedTicket: RepairTicket = {
         ...existing,
+        customerType: 'government',
         isPaid: billingStatus === 'paid' ? true : existing.isPaid,
         govCreditInfo: updatedGovInfo,
         updatedAt: new Date().toISOString()
       };
 
-      local[idx] = updatedTicket;
+      local[idx] = cleanFirestoreData(updatedTicket);
       setLocal(LOCAL_STORAGE_KEYS.TICKETS, local);
       this.notifyTickets(local);
 
       try {
         await updateDoc(doc(db, 'repair_tickets', ticketId), cleanFirestoreData({
+          customerType: 'government',
           isPaid: billingStatus === 'paid' ? true : existing.isPaid,
           govCreditInfo: updatedGovInfo,
-          updatedAt: new Date().toISOString()
+          updatedAt: updatedTicket.updatedAt
         }));
       } catch (e) {
         console.warn('Firestore update ticket billing status failed:', e);
@@ -623,10 +721,9 @@ class DatabaseService {
     }
   }
 
-  // Helper to generate next Ticket Number: REP-YYYYMMDD-001
+  // Helper to generate next Ticket Number: REP-YYYYMMDD-001 (Asia/Bangkok)
   generateNextTicketNumber(existingTickets: RepairTicket[] = []): string {
-    const today = new Date();
-    const dateStr = today.toISOString().split('T')[0].replace(/-/g, '');
+    const dateStr = getBangkokTodayStr().replace(/-/g, '');
     const prefix = `REP-${dateStr}-`;
 
     const list = Array.isArray(existingTickets) && existingTickets.length > 0
@@ -697,6 +794,7 @@ class DatabaseService {
     billingStatus: import('../types').GovBillingStatus,
     extra?: {
       billedDate?: string;
+      billingSubmittedDate?: string;
       paidDate?: string;
       notes?: string;
       disbursementNumber?: string;
@@ -704,50 +802,110 @@ class DatabaseService {
       transferRef?: string;
       creditDays?: number;
       dueDate?: string;
+      snoozedUntil?: string;
+      snoozedDays?: number;
+      snoozedAt?: string;
     }
   ): Promise<void> {
     const local = getLocal<POSSaleRecord[]>(LOCAL_STORAGE_KEYS.POS_SALES, []);
     const idx = local.findIndex(s => s.id === saleId);
     if (idx >= 0) {
-      const existing = local[idx];
-      const now = new Date().toISOString().split('T')[0];
-      const updatedGovInfo = existing.govCreditInfo
-        ? {
-            ...existing.govCreditInfo,
-            billingStatus,
-            ...(billingStatus === 'billed' && !existing.govCreditInfo.billedDate ? { billedDate: now } : {}),
-            ...(billingStatus === 'paid' && !existing.govCreditInfo.paidDate ? { paidDate: now } : {}),
-            ...(extra?.billedDate ? { billedDate: extra.billedDate } : {}),
-            ...(extra?.paidDate ? { paidDate: extra.paidDate } : {}),
-            ...(extra?.notes !== undefined ? { notes: extra.notes } : {}),
-            ...(extra?.disbursementNumber !== undefined ? { disbursementNumber: extra.disbursementNumber } : {}),
-            ...(extra?.disbursementDate !== undefined ? { disbursementDate: extra.disbursementDate } : {}),
-            ...(extra?.transferRef !== undefined ? { transferRef: extra.transferRef } : {}),
-            ...(extra?.creditDays !== undefined ? { creditDays: extra.creditDays } : {}),
-            ...(extra?.dueDate !== undefined ? { dueDate: extra.dueDate } : {})
-          }
-        : undefined;
+      const existing = migrateLegacyPOSSale(local[idx]);
+      const bangkokToday = getBangkokTodayStr();
+      const baseGovInfo: GovCreditInfo = existing.govCreditInfo || {
+        agencyName: existing.customerName || 'หน่วยงานราชการ',
+        creditDays: 30,
+        dueDate: resolveEffectiveGovDueDate(existing),
+        billingStatus
+      };
+      const updatedGovInfo: GovCreditInfo = {
+        ...baseGovInfo,
+        billingStatus,
+        ...(billingStatus === 'billed' && !baseGovInfo.billedDate ? { billedDate: bangkokToday } : {}),
+        ...(billingStatus === 'paid' && !baseGovInfo.paidDate ? { paidDate: bangkokToday } : {}),
+        ...(extra?.billedDate ? { billedDate: extra.billedDate } : {}),
+        ...(extra?.billingSubmittedDate ? { billingSubmittedDate: extra.billingSubmittedDate } : {}),
+        ...(extra?.paidDate ? { paidDate: extra.paidDate } : {}),
+        ...(extra?.notes !== undefined ? { notes: extra.notes } : {}),
+        ...(extra?.disbursementNumber !== undefined ? { disbursementNumber: extra.disbursementNumber } : {}),
+        ...(extra?.disbursementDate !== undefined ? { disbursementDate: extra.disbursementDate } : {}),
+        ...(extra?.transferRef !== undefined ? { transferRef: extra.transferRef } : {}),
+        ...(extra?.creditDays !== undefined ? { creditDays: extra.creditDays } : {}),
+        ...(extra?.dueDate !== undefined ? { dueDate: extra.dueDate } : {}),
+        ...(extra?.snoozedUntil !== undefined ? { snoozedUntil: extra.snoozedUntil } : {}),
+        ...(extra?.snoozedDays !== undefined ? { snoozedDays: extra.snoozedDays } : {}),
+        ...(extra?.snoozedAt !== undefined ? { snoozedAt: extra.snoozedAt } : {})
+      };
+
+      if (billingStatus === 'paid') {
+        delete updatedGovInfo.snoozedUntil;
+        delete updatedGovInfo.snoozedDays;
+      }
 
       const updatedSale: POSSaleRecord = {
         ...existing,
+        customerType: 'government',
         govCreditInfo: updatedGovInfo
       };
 
-      local[idx] = updatedSale;
+      local[idx] = cleanFirestoreData(updatedSale);
       setLocal(LOCAL_STORAGE_KEYS.POS_SALES, local);
       this.notifyPOSSales(local);
 
       try {
-        await updateDoc(doc(db, 'pos_sales', saleId), cleanFirestoreData({ govCreditInfo: updatedGovInfo }));
+        await updateDoc(doc(db, 'pos_sales', saleId), cleanFirestoreData({
+          customerType: 'government',
+          govCreditInfo: updatedGovInfo
+        }));
       } catch (e) {
         console.warn('Firestore update pos_sale billing status failed:', e);
       }
     }
   }
 
+  /**
+   * Marks a government bill (Ticket or POS) as paid with an explicit or Bangkok-today paidDate.
+   */
+  async markGovBillPaid(source: 'ticket' | 'pos', id: string, paidDate?: string): Promise<void> {
+    const effectivePaidDate = paidDate || getBangkokTodayStr();
+    if (source === 'ticket') {
+      await this.updateTicketBillingStatus(id, 'paid', { paidDate: effectivePaidDate });
+    } else {
+      await this.updatePOSSaleBillingStatus(id, 'paid', { paidDate: effectivePaidDate });
+    }
+  }
+
+  /**
+   * Snoozes a government bill alert for 1, 3, or 7 days (calculated in Asia/Bangkok date).
+   */
+  async snoozeGovBill(source: 'ticket' | 'pos', id: string, days: 1 | 3 | 7): Promise<void> {
+    const bangkokToday = getBangkokTodayStr();
+    const snoozedUntil = addDaysToDateStr(bangkokToday, days);
+    const snoozedAt = new Date().toISOString();
+
+    if (source === 'ticket') {
+      const local = getLocal<RepairTicket[]>(LOCAL_STORAGE_KEYS.TICKETS, INITIAL_TICKETS);
+      const target = local.find(t => t.id === id);
+      const currentStatus = target?.govCreditInfo?.billingStatus || 'pending_billing';
+      await this.updateTicketBillingStatus(id, currentStatus === 'paid' ? 'billed' : currentStatus, {
+        snoozedUntil,
+        snoozedDays: days,
+        snoozedAt
+      });
+    } else {
+      const local = getLocal<POSSaleRecord[]>(LOCAL_STORAGE_KEYS.POS_SALES, []);
+      const target = local.find(s => s.id === id);
+      const currentStatus = target?.govCreditInfo?.billingStatus || 'pending_billing';
+      await this.updatePOSSaleBillingStatus(id, currentStatus === 'paid' ? 'billed' : currentStatus, {
+        snoozedUntil,
+        snoozedDays: days,
+        snoozedAt
+      });
+    }
+  }
+
   generateNextPOSReceiptNumber(existingSales: POSSaleRecord[] = []): string {
-    const today = new Date();
-    const dateStr = today.toISOString().split('T')[0].replace(/-/g, '');
+    const dateStr = getBangkokTodayStr().replace(/-/g, '');
     const prefix = `POS-${dateStr}-`;
 
     const list = Array.isArray(existingSales) && existingSales.length > 0

@@ -1,11 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { RepairTicket, InventoryItem, ShopSettings, RepairStatus, UsedPart, POSSaleRecord, RepairDocumentType } from './types';
 import { dbService } from './services/db';
 import { testConnection } from './firebase/config';
 import { INITIAL_SHOP_SETTINGS } from './utils/mockSeedData';
+import {
+  GovBillAlertItem,
+  collectGovBillAlerts
+} from './utils/govCredit';
 import { Navbar } from './components/Navbar';
 import { Dashboard } from './components/Dashboard';
-import { RepairTickets } from './components/RepairTickets';
+import { RepairTickets, GovFilterType } from './components/RepairTickets';
 import { InventoryManager } from './components/InventoryManager';
 import { POSView } from './components/POSView';
 import { POSReceiptModal } from './components/POSReceiptModal';
@@ -20,7 +24,8 @@ import { GovConsolidatedBillingModal } from './components/GovConsolidatedBilling
 export default function App() {
   // Navigation State
   const [activeTab, setActiveTab] = useState<'dashboard' | 'tickets' | 'inventory' | 'pos' | 'reports'>('dashboard');
-  const [repairViewPage, setRepairViewPage] = useState<'active' | 'closed'>('active');
+  const [repairViewPage, setRepairViewPage] = useState<'active' | 'closed' | 'all'>('active');
+  const [govTicketsFilter, setGovTicketsFilter] = useState<GovFilterType>('all');
   
   // Dedicated Customer Portal State (True separation between Customer & Admin)
   const [customerTicketNumber, setCustomerTicketNumber] = useState<string | null>(null);
@@ -217,6 +222,34 @@ export default function App() {
     i => i.stockQuantity <= i.minStockAlert
   ).length;
 
+  // Government Bill Alerts (due_soon / due_today / overdue, excluding snoozed & paid)
+  const govAlerts = useMemo(
+    () => collectGovBillAlerts(tickets, posSales, shopSettings.govAlertDays),
+    [tickets, posSales, shopSettings.govAlertDays]
+  );
+
+  const handleMarkGovBillPaid = async (source: 'ticket' | 'pos', id: string, paidDate?: string) => {
+    await dbService.markGovBillPaid(source, id, paidDate);
+  };
+
+  const handleSnoozeGovBill = async (source: 'ticket' | 'pos', id: string, days: 1 | 3 | 7) => {
+    await dbService.snoozeGovBill(source, id, days);
+  };
+
+  const handleOpenGovBill = (alert: GovBillAlertItem) => {
+    if (alert.ticket) {
+      handleOpenEditTicket(alert.ticket);
+    } else if (alert.posSale) {
+      handleViewPOSReceipt(alert.posSale);
+    }
+  };
+
+  const handleViewGovAlertsInTickets = () => {
+    setRepairViewPage('all');
+    setGovTicketsFilter('gov_all');
+    setActiveTab('tickets');
+  };
+
   // =========================================================================
   // IF CUSTOMER SCANNED QR CODE (track query parameter present):
   // RENDER PURELY THE CUSTOMER PORTAL — NO ADMIN NAVBAR, NO ADMIN BUTTONS!
@@ -253,6 +286,11 @@ export default function App() {
             alert('ยังไม่มีข้อมูลงานซ่อมในระบบ กรุณาเปิดใบรับซ่อมก่อน');
           }
         }}
+        govAlerts={govAlerts}
+        onMarkGovBillPaid={handleMarkGovBillPaid}
+        onSnoozeGovBill={handleSnoozeGovBill}
+        onOpenGovBill={handleOpenGovBill}
+        onViewGovAlertsInTickets={handleViewGovAlertsInTickets}
       />
 
       {/* Main Admin Content Area (Hidden during printing so only the ticket prints) */}
@@ -269,10 +307,12 @@ export default function App() {
             onLineNotify={handleLineNotify}
             onViewAllTickets={() => {
               setRepairViewPage('active');
+              setGovTicketsFilter('all');
               setActiveTab('tickets');
             }}
             onViewClosedTickets={() => {
               setRepairViewPage('closed');
+              setGovTicketsFilter('all');
               setActiveTab('tickets');
             }}
             onViewInventory={() => setActiveTab('inventory')}
@@ -284,6 +324,8 @@ export default function App() {
           <RepairTickets
             tickets={tickets}
             initialViewPage={repairViewPage}
+            initialGovFilter={govTicketsFilter}
+            govAlertDays={shopSettings.govAlertDays}
             onNewTicket={handleOpenNewTicket}
             onEditTicket={handleOpenEditTicket}
             onDeleteTicket={handleDeleteTicket}
@@ -292,6 +334,8 @@ export default function App() {
             onPrintTicket={handlePrintTicket}
             onLineNotify={handleLineNotify}
             onOpenTracking={handleOpenTrackingFromTicket}
+            onMarkGovBillPaid={handleMarkGovBillPaid}
+            onSnoozeGovBill={handleSnoozeGovBill}
           />
         )}
 

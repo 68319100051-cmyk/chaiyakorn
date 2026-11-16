@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   InventoryItem,
   ShopSettings,
@@ -6,9 +6,19 @@ import {
   POSSaleRecord,
   InventoryCategory,
   GovCreditInfo,
-  GovBillingStatus
+  GovBillingStatus,
+  CustomerType
 } from '../types';
 import { dbService } from '../services/db';
+import {
+  calculateGovDueDate,
+  getBangkokTodayStr,
+  getEffectiveCustomerType,
+  getGovCreditDueStatus,
+  isGovBillPaid,
+  resolveEffectiveGovDueDate
+} from '../utils/govCredit';
+import { formatThaiDateFull } from '../utils/printHelpers';
 import {
   Search,
   Plus,
@@ -80,16 +90,29 @@ export const POSView: React.FC<POSViewProps> = ({
   const [cashReceivedInput, setCashReceivedInput] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Government Credit State
+  // Customer Type & Government Credit State
+  const [customerType, setCustomerType] = useState<CustomerType>('general');
   const [govAgencyName, setGovAgencyName] = useState('');
   const [govTaxId, setGovTaxId] = useState('');
   const [govDepartment, setGovDepartment] = useState('งานพัสดุ');
   const [govOrderNumber, setGovOrderNumber] = useState('');
   const [govContactPerson, setGovContactPerson] = useState('');
   const [govContactPhone, setGovContactPhone] = useState('');
+  const [govBillingSubmittedDate, setGovBillingSubmittedDate] = useState<string>(() => getBangkokTodayStr());
   const [govCreditDays, setGovCreditDays] = useState<number>(30);
+  const [govDueDate, setGovDueDate] = useState<string>(() => calculateGovDueDate(getBangkokTodayStr(), 30));
+  const [govDueDateManual, setGovDueDateManual] = useState<boolean>(false);
+  const [govIsPaid, setGovIsPaid] = useState<boolean>(false);
+  const [govPaidDate, setGovPaidDate] = useState<string>('');
   const [govNotes, setGovNotes] = useState('');
   const [historyFilter, setHistoryFilter] = useState<'all' | 'normal' | 'gov_credit'>('all');
+
+  useEffect(() => {
+    if (!govDueDateManual && govBillingSubmittedDate) {
+      const autoDue = calculateGovDueDate(govBillingSubmittedDate, govCreditDays || 0);
+      if (autoDue) setGovDueDate(autoDue);
+    }
+  }, [govBillingSubmittedDate, govCreditDays, govDueDateManual]);
 
   // Quick Custom Product Entry Modal
   const [isCustomModalOpen, setIsCustomModalOpen] = useState(false);
@@ -275,15 +298,18 @@ export const POSView: React.FC<POSViewProps> = ({
       return;
     }
 
+    const isGovernmentCustomer = customerType === 'government' || paymentMethod === 'gov_credit';
     let govCreditInfo: GovCreditInfo | undefined = undefined;
-    if (paymentMethod === 'gov_credit') {
+    if (isGovernmentCustomer) {
       if (!govAgencyName.trim()) {
-        alert('กรุณาระบุชื่อหน่วยงานราชการหรือโรงเรียนผู้ขอใช้เครดิต');
+        alert('กรุณาระบุชื่อหน่วยงานราชการหรือสถานศึกษา');
         return;
       }
-      const dueDateObj = new Date();
-      dueDateObj.setDate(dueDateObj.getDate() + (govCreditDays || 30));
-      const dueDate = dueDateObj.toISOString().split('T')[0];
+      const bangkokToday = getBangkokTodayStr();
+      const submittedDate = govBillingSubmittedDate || bangkokToday;
+      const creditDaysNum = Math.max(0, Number(govCreditDays) || 0);
+      const dueDate = govDueDate || calculateGovDueDate(submittedDate, creditDaysNum);
+      const effectivePaidDate = govIsPaid ? (govPaidDate || bangkokToday) : undefined;
 
       govCreditInfo = {
         agencyName: govAgencyName.trim(),
@@ -292,9 +318,12 @@ export const POSView: React.FC<POSViewProps> = ({
         orderNumber: govOrderNumber.trim() || undefined,
         contactPerson: govContactPerson.trim() || undefined,
         contactPhone: govContactPhone.trim() || undefined,
-        creditDays: govCreditDays || 30,
+        creditDays: creditDaysNum,
+        billingSubmittedDate: submittedDate,
         dueDate,
-        billingStatus: 'pending_billing',
+        dueDateManualOverride: govDueDateManual || undefined,
+        billingStatus: govIsPaid ? 'paid' : 'pending_billing',
+        paidDate: effectivePaidDate,
         notes: govNotes.trim() || undefined
       };
     }
@@ -308,6 +337,7 @@ export const POSView: React.FC<POSViewProps> = ({
     const saleRecord: POSSaleRecord = {
       id: `sale-${Date.now()}`,
       receiptNumber,
+      customerType: isGovernmentCustomer ? 'government' : 'general',
       items: cart,
       subtotal,
       discount: calculatedDiscount,
@@ -316,8 +346,8 @@ export const POSView: React.FC<POSViewProps> = ({
       paymentMethod,
       amountReceived: finalAmountReceived,
       change: finalChange,
-      customerName: paymentMethod === 'gov_credit' ? govAgencyName.trim() : (customerName.trim() || 'ลูกค้าทั่วไป (หน้าร้าน)'),
-      customerPhone: paymentMethod === 'gov_credit' ? (govContactPhone.trim() || customerPhone.trim()) : customerPhone.trim(),
+      customerName: isGovernmentCustomer ? govAgencyName.trim() : (customerName.trim() || 'ลูกค้าทั่วไป (หน้าร้าน)'),
+      customerPhone: isGovernmentCustomer ? (govContactPhone.trim() || customerPhone.trim()) : customerPhone.trim(),
       cashierName: cashierName.trim() || 'เจ้าหน้าที่ประจำร้าน',
       govCreditInfo,
       createdAt: new Date().toISOString()
@@ -333,12 +363,19 @@ export const POSView: React.FC<POSViewProps> = ({
       setCashReceivedInput('');
       setCustomerName('');
       setCustomerPhone('');
-      if (paymentMethod === 'gov_credit') {
+      if (isGovernmentCustomer) {
+        const resetToday = getBangkokTodayStr();
         setGovAgencyName('');
         setGovTaxId('');
         setGovOrderNumber('');
         setGovContactPerson('');
         setGovContactPhone('');
+        setGovBillingSubmittedDate(resetToday);
+        setGovCreditDays(30);
+        setGovDueDateManual(false);
+        setGovDueDate(calculateGovDueDate(resetToday, 30));
+        setGovIsPaid(false);
+        setGovPaidDate('');
         setGovNotes('');
       }
 
@@ -352,9 +389,9 @@ export const POSView: React.FC<POSViewProps> = ({
     }
   };
 
-  // Today sales calculation
-  const todayStr = new Date().toISOString().split('T')[0];
-  const todaySales = salesHistory.filter(s => s.createdAt.startsWith(todayStr));
+  // Today sales calculation (Asia/Bangkok)
+  const todayStr = getBangkokTodayStr();
+  const todaySales = salesHistory.filter(s => s.createdAt && getBangkokTodayStr(new Date(s.createdAt)) === todayStr);
   const todayTotalRevenue = todaySales.reduce((sum, s) => sum + (s.totalAmount || 0), 0);
 
   return (
@@ -642,15 +679,53 @@ export const POSView: React.FC<POSViewProps> = ({
 
           {/* Customer & Discount Controls */}
           <div className="p-4 space-y-3 bg-slate-50/50 dark:bg-slate-900/30">
+            {/* Customer Type Toggle */}
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                ประเภทลูกค้า
+              </label>
+              <div className="grid grid-cols-2 gap-1.5 p-1 rounded-xl bg-slate-200/70 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCustomerType('general');
+                    if (paymentMethod === 'gov_credit') setPaymentMethod('cash');
+                  }}
+                  className={`py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    customerType === 'general' && paymentMethod !== 'gov_credit'
+                      ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-300 shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                  }`}
+                >
+                  ลูกค้าทั่วไป
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCustomerType('government');
+                    setPaymentMethod('gov_credit');
+                  }}
+                  className={`py-1.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                    customerType === 'government' || paymentMethod === 'gov_credit'
+                      ? 'bg-purple-600 text-white shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-purple-700'
+                  }`}
+                >
+                  <Building2 className="w-3.5 h-3.5" />
+                  <span>หน่วยงานราชการ</span>
+                </button>
+              </div>
+            </div>
+
             {/* Customer Name / Phone (Optional) */}
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
-                  ชื่อลูกค้า (เว้นว่างได้)
+                  {customerType === 'government' ? 'ชื่อผู้ติดต่อ / รับของ' : 'ชื่อลูกค้า (เว้นว่างได้)'}
                 </label>
                 <input
                   type="text"
-                  placeholder="ลูกค้าทั่วไป"
+                  placeholder={customerType === 'government' ? 'ชื่อเจ้าหน้าที่' : 'ลูกค้าทั่วไป'}
                   value={customerName}
                   onChange={e => setCustomerName(e.target.value)}
                   className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs focus:ring-1 focus:ring-emerald-500"
@@ -770,7 +845,10 @@ export const POSView: React.FC<POSViewProps> = ({
 
                 <button
                   type="button"
-                  onClick={() => setPaymentMethod('gov_credit')}
+                  onClick={() => {
+                    setPaymentMethod('gov_credit');
+                    setCustomerType('government');
+                  }}
                   className={`flex flex-col items-center justify-center py-2 px-1 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
                     paymentMethod === 'gov_credit'
                       ? 'bg-purple-50 dark:bg-purple-950/80 border-purple-500 text-purple-700 dark:text-purple-300 ring-2 ring-purple-500/20'
@@ -844,8 +922,8 @@ export const POSView: React.FC<POSViewProps> = ({
               </div>
             )}
 
-            {/* GOVERNMENT CREDIT INPUT FORM (If gov_credit selected) */}
-            {paymentMethod === 'gov_credit' && (
+            {/* GOVERNMENT CREDIT INPUT FORM (If government customer or gov_credit selected) */}
+            {(customerType === 'government' || paymentMethod === 'gov_credit') && (
               <div className="bg-purple-50/80 dark:bg-purple-950/40 p-3 rounded-xl border border-purple-200 dark:border-purple-800/70 space-y-2.5 text-xs text-purple-950 dark:text-purple-200 animate-in fade-in duration-150">
                 <div className="flex items-center justify-between border-b border-purple-200 dark:border-purple-800/80 pb-1.5">
                   <span className="font-bold text-purple-900 dark:text-purple-200 flex items-center gap-1.5">
@@ -907,11 +985,11 @@ export const POSView: React.FC<POSViewProps> = ({
                   </div>
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
-                      เลขที่ใบสั่งซื้อ / PO
+                      เลขที่หนังสือ / ใบสั่งซื้อ
                     </label>
                     <input
                       type="text"
-                      placeholder="เช่น PO-69/004"
+                      placeholder="เช่น PO-69/004 (ถ้ามี)"
                       value={govOrderNumber}
                       onChange={e => setGovOrderNumber(e.target.value)}
                       className="w-full px-2.5 py-1 rounded-lg border border-purple-300 dark:border-purple-700 bg-white dark:bg-slate-800 font-mono text-xs"
@@ -947,31 +1025,131 @@ export const POSView: React.FC<POSViewProps> = ({
                   </div>
                 </div>
 
-                {/* Credit Term Days */}
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-[10px] font-bold text-slate-500 uppercase">
-                      ระยะเวลาเครดิตเทอม
+                {/* Submitted Date, Editable Credit Days & Due Date */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 border-t border-purple-200/70 dark:border-purple-800/70">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                      วันที่ส่งเอกสารเบิก
                     </label>
-                    <span className="text-[10px] font-bold text-purple-700 dark:text-purple-300">
-                      ครบกำหนด: {new Date(Date.now() + govCreditDays * 86400000).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })}
-                    </span>
+                    <input
+                      type="date"
+                      value={govBillingSubmittedDate}
+                      onChange={e => {
+                        setGovBillingSubmittedDate(e.target.value);
+                        setGovDueDateManual(false);
+                      }}
+                      className="w-full px-2 py-1 rounded-lg border border-purple-300 dark:border-purple-700 bg-white dark:bg-slate-800 font-mono text-xs"
+                    />
                   </div>
-                  <div className="grid grid-cols-4 gap-1.5">
-                    {[15, 30, 45, 60].map(days => (
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                      เครดิต (วัน)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="365"
+                      value={govCreditDays}
+                      onChange={e => {
+                        setGovCreditDays(Math.max(0, parseInt(e.target.value, 10) || 0));
+                        setGovDueDateManual(false);
+                      }}
+                      className="w-full px-2 py-1 rounded-lg border border-purple-300 dark:border-purple-700 bg-white dark:bg-slate-800 font-bold text-center text-xs"
+                    />
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase">
+                        วันครบกำหนด
+                      </label>
+                      {govDueDateManual && (
+                        <button
+                          type="button"
+                          onClick={() => setGovDueDateManual(false)}
+                          className="text-[9px] text-purple-600 dark:text-purple-300 underline cursor-pointer"
+                        >
+                          คำนวณอัตโนมัติ
+                        </button>
+                      )}
+                    </div>
+                    <input
+                      type="date"
+                      value={govDueDate}
+                      onChange={e => {
+                        setGovDueDate(e.target.value);
+                        setGovDueDateManual(true);
+                      }}
+                      className="w-full px-2 py-1 rounded-lg border border-purple-300 dark:border-purple-700 bg-white dark:bg-slate-800 font-mono text-xs font-bold text-purple-700 dark:text-purple-300"
+                    />
+                  </div>
+                </div>
+
+                {/* Credit Days Quick Presets */}
+                <div className="grid grid-cols-4 gap-1.5">
+                  {[15, 30, 45, 60].map(days => (
+                    <button
+                      key={days}
+                      type="button"
+                      onClick={() => {
+                        setGovCreditDays(days);
+                        setGovDueDateManual(false);
+                      }}
+                      className={`py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        govCreditDays === days
+                          ? 'bg-purple-600 text-white shadow-xs'
+                          : 'bg-white dark:bg-slate-800 border border-purple-200 dark:border-purple-800 text-purple-900 dark:text-purple-300 hover:bg-purple-100'
+                      }`}
+                    >
+                      {days} วัน
+                    </button>
+                  ))}
+                </div>
+
+                {/* Government Payment Status & Paid Date */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t border-purple-200/70 dark:border-purple-800/70">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                      สถานะการรับเงิน
+                    </label>
+                    <div className="flex gap-1.5">
                       <button
-                        key={days}
                         type="button"
-                        onClick={() => setGovCreditDays(days)}
-                        className={`py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                          govCreditDays === days
-                            ? 'bg-purple-600 text-white shadow-xs'
-                            : 'bg-white dark:bg-slate-800 border border-purple-200 dark:border-purple-800 text-purple-900 dark:text-purple-300 hover:bg-purple-100'
+                        onClick={() => setGovIsPaid(false)}
+                        className={`flex-1 py-1 px-2 rounded-lg text-[11px] font-bold border cursor-pointer transition-all ${
+                          !govIsPaid
+                            ? 'bg-amber-500 text-white border-amber-600 shadow-xs'
+                            : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-purple-200 dark:border-purple-800'
                         }`}
                       >
-                        {days} วัน
+                        ยังไม่ได้รับเงิน
                       </button>
-                    ))}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setGovIsPaid(true);
+                          if (!govPaidDate) setGovPaidDate(getBangkokTodayStr());
+                        }}
+                        className={`flex-1 py-1 px-2 rounded-lg text-[11px] font-bold border cursor-pointer transition-all ${
+                          govIsPaid
+                            ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs'
+                            : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-purple-200 dark:border-purple-800'
+                        }`}
+                      >
+                        รับเงินแล้ว
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                      วันที่รับเงิน {govIsPaid ? '' : '(ระบุเมื่อรับเงิน)'}
+                    </label>
+                    <input
+                      type="date"
+                      disabled={!govIsPaid}
+                      value={govIsPaid ? govPaidDate : ''}
+                      onChange={e => setGovPaidDate(e.target.value)}
+                      className="w-full px-2 py-1 rounded-lg border border-purple-300 dark:border-purple-700 bg-white dark:bg-slate-800 font-mono text-xs disabled:opacity-50"
+                    />
                   </div>
                 </div>
               </div>
@@ -1019,7 +1197,7 @@ export const POSView: React.FC<POSViewProps> = ({
                   {paymentMethod === 'gov_credit' ? <Building2 className="w-4 h-4" /> : <Receipt className="w-4 h-4" />}
                   <span>
                     {paymentMethod === 'gov_credit'
-                      ? `ออกใบส่งของ / ใบวางบิลราชการ (฿${totalAmount.toLocaleString()})`
+                      ? `ออกใบส่งของราชการ (฿${totalAmount.toLocaleString()})`
                       : `บันทึกการขาย & พิมพ์ใบเสร็จ (฿${totalAmount.toLocaleString()})`}
                   </span>
                 </>
@@ -1236,7 +1414,7 @@ export const POSView: React.FC<POSViewProps> = ({
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
                 }`}
               >
-                เงินสด / โอน ({todaySales.filter(s => s.paymentMethod !== 'gov_credit').length})
+                ทั่วไป ({todaySales.filter(s => getEffectiveCustomerType(s) !== 'government').length})
               </button>
               <button
                 type="button"
@@ -1247,7 +1425,7 @@ export const POSView: React.FC<POSViewProps> = ({
                     : 'text-purple-700 dark:text-purple-300 hover:bg-purple-100/50'
                 }`}
               >
-                เครดิตราชการ ({todaySales.filter(s => s.paymentMethod === 'gov_credit').length})
+                ราชการ ({todaySales.filter(s => getEffectiveCustomerType(s) === 'government').length})
               </button>
             </div>
 
@@ -1273,8 +1451,9 @@ export const POSView: React.FC<POSViewProps> = ({
             <div className="flex-1 overflow-y-auto space-y-2 pr-1">
               {todaySales
                 .filter(s => {
-                  if (historyFilter === 'normal') return s.paymentMethod !== 'gov_credit';
-                  if (historyFilter === 'gov_credit') return s.paymentMethod === 'gov_credit';
+                  const isGovSale = getEffectiveCustomerType(s) === 'government';
+                  if (historyFilter === 'normal') return !isGovSale;
+                  if (historyFilter === 'gov_credit') return isGovSale;
                   return true;
                 })
                 .length === 0 ? (
@@ -1284,14 +1463,20 @@ export const POSView: React.FC<POSViewProps> = ({
               ) : (
                 todaySales
                   .filter(s => {
-                    if (historyFilter === 'normal') return s.paymentMethod !== 'gov_credit';
-                    if (historyFilter === 'gov_credit') return s.paymentMethod === 'gov_credit';
+                    const isGovSale = getEffectiveCustomerType(s) === 'government';
+                    if (historyFilter === 'normal') return !isGovSale;
+                    if (historyFilter === 'gov_credit') return isGovSale;
                     return true;
                   })
                   .map((sale) => {
-                    const isGov = sale.paymentMethod === 'gov_credit';
+                    const isGov = getEffectiveCustomerType(sale) === 'government';
                     const govInfo = sale.govCreditInfo;
-                    const billingStatus = govInfo?.billingStatus || 'pending_billing';
+                    const paid = isGovBillPaid({ govCreditInfo: govInfo });
+                    const billingStatus = paid ? 'paid' : (govInfo?.billingStatus || 'pending_billing');
+                    const effectiveDueDate = isGov ? resolveEffectiveGovDueDate(sale) : '';
+                    const dueInfo = isGov
+                      ? getGovCreditDueStatus(effectiveDueDate, billingStatus, todayStr, shopSettings.govAlertDays)
+                      : null;
 
                     return (
                       <div
@@ -1308,13 +1493,13 @@ export const POSView: React.FC<POSViewProps> = ({
                               {sale.receiptNumber}
                             </span>
                             <span className="text-[10px] text-slate-400">
-                              {new Date(sale.createdAt).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น.
+                              {new Date(sale.createdAt).toLocaleTimeString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' })} น.
                             </span>
 
                             {isGov ? (
                               <span className="px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 font-bold text-[10px] flex items-center gap-1">
                                 <Building2 className="w-3 h-3" />
-                                <span>เครดิตราชการ</span>
+                                <span>บิลราชการ</span>
                               </span>
                             ) : (
                               <span className="px-1.5 py-0.2 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-[10px]">
@@ -1322,15 +1507,9 @@ export const POSView: React.FC<POSViewProps> = ({
                               </span>
                             )}
 
-                            {isGov && (
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                billingStatus === 'paid'
-                                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
-                                  : billingStatus === 'billed'
-                                  ? 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
-                                  : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
-                              }`}>
-                                {billingStatus === 'paid' ? 'ชำระแล้ว' : billingStatus === 'billed' ? 'วางบิลแล้ว' : 'รอวางบิล'}
+                            {isGov && dueInfo && (
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] border ${dueInfo.badgeClass}`}>
+                                {dueInfo.badgeLabel}
                               </span>
                             )}
                           </div>
@@ -1344,10 +1523,10 @@ export const POSView: React.FC<POSViewProps> = ({
                               {isGov ? `หน่วยงาน: ${govInfo?.agencyName || sale.customerName}` : `ลูกค้า: ${sale.customerName || 'ทั่วไป'}`}
                             </span>
                             {govInfo?.orderNumber && (
-                              <span>• PO: <span className="font-mono font-bold text-slate-700 dark:text-slate-300">{govInfo.orderNumber}</span></span>
+                              <span>• เลขที่หนังสือ/PO: <span className="font-mono font-bold text-slate-700 dark:text-slate-300">{govInfo.orderNumber}</span></span>
                             )}
-                            {govInfo?.dueDate && (
-                              <span>• ครบกำหนด: <span className="font-semibold text-purple-700 dark:text-purple-300">{govInfo.dueDate}</span></span>
+                            {effectiveDueDate && (
+                              <span>• ครบกำหนด: <span className="font-semibold text-purple-700 dark:text-purple-300">{formatThaiDateFull(effectiveDueDate)}</span></span>
                             )}
                           </div>
                         </div>
@@ -1359,23 +1538,22 @@ export const POSView: React.FC<POSViewProps> = ({
                             </span>
                             {isGov && (
                               <span className="text-[10px] text-slate-400 block">
-                                เครดิต {govInfo?.creditDays || 30} วัน
+                                เครดิต {govInfo?.creditDays ?? 30} วัน
                               </span>
                             )}
                           </div>
 
-                          {/* Quick Billing Status Advance for Gov Credit */}
+                          {/* Quick Payment Action for Unpaid Gov Bill */}
                           {isGov && billingStatus !== 'paid' && (
                             <button
                               type="button"
                               onClick={async () => {
-                                const nextStatus = billingStatus === 'pending_billing' ? 'billed' : 'paid';
-                                await dbService.updatePOSSaleBillingStatus(sale.id, nextStatus);
+                                await dbService.markGovBillPaid('pos', sale.id, getBangkokTodayStr());
                               }}
-                              className="px-2 py-1 rounded-lg bg-purple-100 hover:bg-purple-200 dark:bg-purple-900/60 dark:hover:bg-purple-900 text-purple-800 dark:text-purple-200 text-[10px] font-bold transition-colors cursor-pointer"
-                              title="คลิกเพื่อปรับสถานะการวางบิล"
+                              className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold transition-colors cursor-pointer"
+                              title="บันทึกรับเงินแล้ว"
                             >
-                              {billingStatus === 'pending_billing' ? '✓ เปลี่ยนเป็น: วางบิลแล้ว' : '✓ เปลี่ยนเป็น: ชำระแล้ว'}
+                              ✓ รับเงินแล้ว
                             </button>
                           )}
 

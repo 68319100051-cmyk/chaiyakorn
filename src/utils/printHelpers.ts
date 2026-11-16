@@ -30,8 +30,30 @@ export const A5_PAGE_CONFIG = {
   marginLeftMm: 6,
   printableWidthMm: 136,
   printableHeightMm: 200.5,
-  minFontPt: 10
+  minFontPt: 9,
+  lineHeight: 1.55
 } as const;
+
+/**
+ * Triggers window.print() while temporarily setting a clean document title
+ * (without slashes) so browser PDF export filenames are clean and consistent.
+ */
+export function printWithCleanTitle(cleanTitle: string): void {
+  const prevTitle = document.title;
+  const safeTitle = (cleanTitle || 'FixPro')
+    .replace(/\s*\/\s*/g, '-')
+    .replace(/[\\/:*?"<>|]/g, '-')
+    .trim();
+
+  document.title = safeTitle;
+  const restore = () => {
+    document.title = prevTitle;
+  };
+  window.addEventListener('afterprint', restore, { once: true });
+  window.print();
+  // Fallback restore in case browser blocks/skips afterprint event
+  setTimeout(restore, 1500);
+}
 
 /**
  * Parses ISO date strings ("2026-11-19" or "2026-11-19T08:30:00Z") or Date objects

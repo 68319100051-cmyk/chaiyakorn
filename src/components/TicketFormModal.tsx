@@ -8,8 +8,17 @@ import {
   UsedPart,
   GovCreditInfo,
   POSSaleRecord,
-  RepairDocumentType
+  RepairDocumentType,
+  CustomerType,
+  STATUS_CONFIG
 } from '../types';
+import {
+  calculateGovDueDate,
+  getBangkokTodayStr,
+  getEffectiveCustomerType,
+  isGovBillPaid,
+  resolveEffectiveGovDueDate
+} from '../utils/govCredit';
 import {
   createEmptyDeviceItem,
   getTicketDevices,
@@ -139,16 +148,22 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
   const [discountPercentInput, setDiscountPercentInput] = useState<string>('10');
   const [isPaid, setIsPaid] = useState<boolean>(false);
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'transfer' | 'credit' | 'gov_credit' | 'unpaid'>('unpaid');
-  const [receivedDate, setReceivedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [receivedDate, setReceivedDate] = useState<string>(() => getBangkokTodayStr());
   const [estimatedCompletionDate, setEstimatedCompletionDate] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
-  // Government Credit State
+  // Customer Type & Government Credit State
+  const [customerType, setCustomerType] = useState<CustomerType>('general');
   const [govAgencyName, setGovAgencyName] = useState<string>('');
   const [govTaxId, setGovTaxId] = useState<string>('');
   const [govDepartment, setGovDepartment] = useState<string>('งานพัสดุ');
   const [govOrderNumber, setGovOrderNumber] = useState<string>('');
   const [govCreditDays, setGovCreditDays] = useState<number>(30);
+  const [govBillingSubmittedDate, setGovBillingSubmittedDate] = useState<string>('');
+  const [govDueDate, setGovDueDate] = useState<string>('');
+  const [govDueDateManual, setGovDueDateManual] = useState<boolean>(false);
+  const [govIsPaid, setGovIsPaid] = useState<boolean>(false);
+  const [govPaidDate, setGovPaidDate] = useState<string>('');
 
   // Warranty & Claim State
   const [warrantyDays, setWarrantyDays] = useState<number>(30);
@@ -406,14 +421,20 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
     if (profile.customerLineId) setCustomerLineId(profile.customerLineId);
     if (profile.customerAddress) setCustomerAddress(profile.customerAddress);
 
-    // If government credit info exists, pre-fill it!
+    // If government credit info exists or customerType is government, pre-fill it!
     if (profile.govCreditInfo) {
+      setCustomerType('government');
       setPaymentMethod('gov_credit');
       setGovAgencyName(profile.govCreditInfo.agencyName || profile.customerName);
       if (profile.govCreditInfo.taxId) setGovTaxId(profile.govCreditInfo.taxId);
       if (profile.govCreditInfo.department) setGovDepartment(profile.govCreditInfo.department);
       if (profile.govCreditInfo.orderNumber) setGovOrderNumber(profile.govCreditInfo.orderNumber);
-      if (profile.govCreditInfo.creditDays) setGovCreditDays(profile.govCreditInfo.creditDays);
+      const nextDays = profile.govCreditInfo.creditDays || 30;
+      setGovCreditDays(nextDays);
+      const todayBkk = getBangkokTodayStr();
+      setGovBillingSubmittedDate(todayBkk);
+      setGovDueDate(calculateGovDueDate(todayBkk, nextDays));
+      setGovDueDateManual(false);
     }
 
     // Pre-fill device information if available
@@ -490,6 +511,7 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
 
   const handleClearReturningCustomer = () => {
     setSelectedReturningCustomer(null);
+    setCustomerType('general');
     setCustomerName('');
     setCustomerPhone('');
     setCustomerLineId('');
@@ -500,15 +522,33 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
     setAccessories([]);
     setGovAgencyName('');
     setGovTaxId('');
+    setGovOrderNumber('');
+    setGovBillingSubmittedDate('');
+    setGovDueDate('');
+    setGovDueDateManual(false);
+    setGovIsPaid(false);
+    setGovPaidDate('');
     setPaymentMethod('unpaid');
     setIsWarrantyClaim(false);
     setOriginalTicketNumber('');
     setDismissWarrantyAlert(false);
   };
 
+  // Auto-calculate dueDate from billingSubmittedDate + creditDays unless manually overridden
+  useEffect(() => {
+    if (customerType !== 'government' && paymentMethod !== 'gov_credit') return;
+    if (govDueDateManual) return;
+    const baseDate = govBillingSubmittedDate || receivedDate || getBangkokTodayStr();
+    const computed = calculateGovDueDate(baseDate, govCreditDays || 30);
+    if (computed) {
+      setGovDueDate(computed);
+    }
+  }, [customerType, paymentMethod, govBillingSubmittedDate, govCreditDays, receivedDate, govDueDateManual]);
+
   // Initialize form
   useEffect(() => {
     setIsSubmitting(false);
+    const bangkokToday = getBangkokTodayStr();
     if (ticketToEdit) {
       const loadedDevices = getTicketDevices(ticketToEdit);
       setDevices(loadedDevices);
@@ -531,7 +571,7 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
       setDiscountMode('baht');
       setIsPaid(ticketToEdit.isPaid || false);
       setPaymentMethod(ticketToEdit.paymentMethod || 'unpaid');
-      setReceivedDate(ticketToEdit.receivedDate || new Date().toISOString().split('T')[0]);
+      setReceivedDate(ticketToEdit.receivedDate || bangkokToday);
       setEstimatedCompletionDate(ticketToEdit.estimatedCompletionDate || '');
       setInitialPartsUsed(flattenUsedPartsForStock(loadedDevices));
 
@@ -542,12 +582,27 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
       setWarrantyClaimNotes(ticketToEdit.warrantyClaimNotes || '');
       setDismissWarrantyAlert(Boolean(ticketToEdit.isWarrantyClaim));
 
-      // Gov Credit Info
+      // Customer Type & Gov Credit Info (migration-safe)
+      const effectiveType = getEffectiveCustomerType(ticketToEdit);
+      setCustomerType(effectiveType);
       setGovAgencyName(ticketToEdit.govCreditInfo?.agencyName || '');
       setGovTaxId(ticketToEdit.govCreditInfo?.taxId || '');
       setGovDepartment(ticketToEdit.govCreditInfo?.department || 'งานพัสดุ');
       setGovOrderNumber(ticketToEdit.govCreditInfo?.orderNumber || '');
-      setGovCreditDays(ticketToEdit.govCreditInfo?.creditDays || 30);
+      const creditDaysVal = ticketToEdit.govCreditInfo?.creditDays || 30;
+      setGovCreditDays(creditDaysVal);
+      const submitted =
+        ticketToEdit.govCreditInfo?.billingSubmittedDate ||
+        ticketToEdit.govCreditInfo?.billedDate ||
+        ticketToEdit.receivedDate ||
+        bangkokToday;
+      setGovBillingSubmittedDate(submitted);
+      const resolvedDue = resolveEffectiveGovDueDate(ticketToEdit) || calculateGovDueDate(submitted, creditDaysVal);
+      setGovDueDate(resolvedDue);
+      setGovDueDateManual(Boolean(ticketToEdit.govCreditInfo?.dueDateManualOverride || ticketToEdit.govCreditInfo?.dueDate));
+      const paidFlag = isGovBillPaid(ticketToEdit);
+      setGovIsPaid(paidFlag);
+      setGovPaidDate(ticketToEdit.govCreditInfo?.paidDate || (paidFlag ? bangkokToday : ''));
     } else {
       // New Ticket defaults
       const firstDev = createEmptyDeviceItem();
@@ -556,6 +611,7 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
       setLaborInputById({ [firstDev.id]: '300' });
 
       setTicketNumber(generateNextTicketNumber());
+      setCustomerType('general');
       setCustomerName('');
       setCustomerPhone('');
       setCustomerLineId('');
@@ -567,11 +623,11 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
       setDiscountMode('baht');
       setIsPaid(false);
       setPaymentMethod('unpaid');
-      setReceivedDate(new Date().toISOString().split('T')[0]);
-      
-      const tomorrow = new Date();
-      tomorrow.setDate(tomorrow.getDate() + 2);
-      setEstimatedCompletionDate(tomorrow.toISOString().split('T')[0]);
+      setReceivedDate(bangkokToday);
+
+      const d2 = new Date();
+      d2.setDate(d2.getDate() + 2);
+      setEstimatedCompletionDate(getBangkokTodayStr(d2));
       setInitialPartsUsed([]);
 
       // Reset Warranty
@@ -587,6 +643,11 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
       setGovDepartment('งานพัสดุ');
       setGovOrderNumber('');
       setGovCreditDays(30);
+      setGovBillingSubmittedDate(bangkokToday);
+      setGovDueDate(calculateGovDueDate(bangkokToday, 30));
+      setGovDueDateManual(false);
+      setGovIsPaid(false);
+      setGovPaidDate('');
     }
   }, [ticketToEdit, isOpen]);
 
@@ -669,8 +730,10 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
   // Handle Submit
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!customerName.trim()) {
-      alert('กรุณากรอกชื่อลูกค้า');
+    const isGovCustomer = customerType === 'government' || paymentMethod === 'gov_credit';
+    const effectiveCustomerName = customerName.trim() || (isGovCustomer ? govAgencyName.trim() : '');
+    if (!effectiveCustomerName) {
+      alert(isGovCustomer ? 'กรุณากรอกชื่อลูกค้าหรือชื่อหน่วยงานราชการ' : 'กรุณากรอกชื่อลูกค้า');
       return;
     }
     if (!customerPhone.trim()) {
@@ -679,22 +742,40 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
     }
 
     const now = new Date().toISOString();
+    const bangkokToday = getBangkokTodayStr();
     const finalTicketNumber = ticketNumber.trim() || generateNextTicketNumber();
 
     let govCreditInfo: GovCreditInfo | undefined = undefined;
-    if (paymentMethod === 'gov_credit') {
-      const dueDateObj = new Date();
-      dueDateObj.setDate(dueDateObj.getDate() + (govCreditDays || 30));
+    let effectiveIsPaid = Boolean(isPaid);
+    if (isGovCustomer) {
+      const submittedDate = govBillingSubmittedDate || receivedDate || bangkokToday;
+      const computedDue =
+        govDueDate.trim() || calculateGovDueDate(submittedDate, govCreditDays || 30);
+      const nextBillingStatus = govIsPaid
+        ? 'paid'
+        : ticketToEdit?.govCreditInfo?.billingStatus === 'billed'
+        ? 'billed'
+        : 'pending_billing';
+      effectiveIsPaid = govIsPaid;
+
       govCreditInfo = {
         ...(ticketToEdit?.govCreditInfo || {}),
-        agencyName: govAgencyName.trim() || customerName.trim(),
+        agencyName: govAgencyName.trim() || effectiveCustomerName,
         taxId: govTaxId.trim() || undefined,
         department: govDepartment.trim() || undefined,
         orderNumber: govOrderNumber.trim() || undefined,
-        creditDays: govCreditDays || 30,
-        dueDate: ticketToEdit?.govCreditInfo?.dueDate || dueDateObj.toISOString().split('T')[0],
-        billingStatus: ticketToEdit?.govCreditInfo?.billingStatus || (isPaid ? 'paid' : 'pending_billing')
+        creditDays: Number(govCreditDays) >= 0 ? Number(govCreditDays) : 30,
+        billingSubmittedDate: submittedDate,
+        dueDate: computedDue,
+        dueDateManualOverride: govDueDateManual,
+        billingStatus: nextBillingStatus,
+        billedDate: ticketToEdit?.govCreditInfo?.billedDate || submittedDate,
+        paidDate: govIsPaid ? (govPaidDate || bangkokToday) : undefined
       };
+      if (govIsPaid) {
+        delete govCreditInfo.snoozedUntil;
+        delete govCreditInfo.snoozedDays;
+      }
     }
 
     const syncedDeviceFields = buildSyncedDevicePayload(devices, status);
@@ -702,7 +783,8 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
     const ticketData: RepairTicket = {
       id: ticketToEdit ? ticketToEdit.id : `ticket-${Date.now()}`,
       ticketNumber: finalTicketNumber,
-      customerName: customerName.trim(),
+      customerType: isGovCustomer ? 'government' : 'general',
+      customerName: effectiveCustomerName,
       customerPhone: customerPhone.trim(),
       customerLineId: customerLineId.trim() || '',
       customerAddress: customerAddress.trim() || '',
@@ -712,25 +794,25 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
       estimatedCost: Number(estimatedCost) || 0,
       discount: Number(discount) || 0,
       totalAmount: Math.max(0, Number(totalAmount) || 0),
-      isPaid: Boolean(isPaid),
-      paymentMethod: paymentMethod || 'unpaid',
+      isPaid: effectiveIsPaid,
+      paymentMethod: isGovCustomer && (!paymentMethod || paymentMethod === 'unpaid') ? 'gov_credit' : (paymentMethod || 'unpaid'),
       govCreditInfo,
       trackingToken: (ticketToEdit?.trackingToken) || finalTicketNumber,
       lineNotified: Boolean(ticketToEdit?.lineNotified),
       lastLineNotifiedAt: ticketToEdit?.lastLineNotifiedAt || '',
-      receivedDate: receivedDate || new Date().toISOString().split('T')[0],
+      receivedDate: receivedDate || bangkokToday,
       estimatedCompletionDate: estimatedCompletionDate || '',
       completedDate: (status === 'repaired' || status === 'ready_pickup' || status === 'completed')
-        ? (ticketToEdit?.completedDate || new Date().toISOString().split('T')[0])
+        ? (ticketToEdit?.completedDate || bangkokToday)
         : '',
       deliveredDate: status === 'completed'
-        ? (ticketToEdit?.deliveredDate || new Date().toISOString().split('T')[0])
+        ? (ticketToEdit?.deliveredDate || bangkokToday)
         : '',
       warrantyDays: Number(warrantyDays) >= 0 ? Number(warrantyDays) : 30,
       warrantyExpiryDate: (() => {
         const wDays = Number(warrantyDays) >= 0 ? Number(warrantyDays) : 30;
         if (wDays <= 0) return '';
-        const baseDateStr = (status === 'completed' ? (ticketToEdit?.deliveredDate || new Date().toISOString().split('T')[0]) : receivedDate) || new Date().toISOString().split('T')[0];
+        const baseDateStr = (status === 'completed' ? (ticketToEdit?.deliveredDate || bangkokToday) : receivedDate) || bangkokToday;
         const d = new Date(baseDateStr);
         d.setDate(d.getDate() + wDays);
         return d.toISOString().split('T')[0];
@@ -1092,12 +1174,94 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
               </div>
             )}
 
+            {/* Customer Type Selector (ทั่วไป / ราชการ) */}
+            <div className="bg-slate-50 dark:bg-slate-900/60 p-3 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2.5 text-xs">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <span className="font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                  <Building2 className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                  <span>ประเภทลูกค้า</span>
+                </span>
+                <div className="inline-flex rounded-xl p-1 bg-slate-200/80 dark:bg-slate-800 border border-slate-300 dark:border-slate-700">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCustomerType('general');
+                      if (paymentMethod === 'gov_credit') {
+                        setPaymentMethod('unpaid');
+                      }
+                    }}
+                    className={`px-3.5 py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
+                      customerType === 'general'
+                        ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                    }`}
+                  >
+                    ลูกค้าทั่วไป
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCustomerType('government');
+                      if (paymentMethod === 'unpaid') {
+                        setPaymentMethod('gov_credit');
+                      }
+                      if (!govBillingSubmittedDate) {
+                        setGovBillingSubmittedDate(receivedDate || getBangkokTodayStr());
+                      }
+                    }}
+                    className={`px-3.5 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                      customerType === 'government'
+                        ? 'bg-purple-600 text-white shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-purple-700'
+                    }`}
+                  >
+                    <Building2 className="w-3.5 h-3.5" />
+                    <span>หน่วยงานราชการ</span>
+                  </button>
+                </div>
+              </div>
+
+              {customerType === 'government' && (
+                <div className="pt-2 border-t border-slate-200 dark:border-slate-700 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="block font-semibold text-purple-900 dark:text-purple-200 mb-1">
+                      ชื่อหน่วยงานราชการ / สถานศึกษา / อบต. <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="เช่น โรงเรียนพัทลุง, สำนักงานเทศบาล..."
+                      value={govAgencyName}
+                      onChange={e => {
+                        setGovAgencyName(e.target.value);
+                        if (!customerName.trim() || customerName === govAgencyName) {
+                          setCustomerName(e.target.value);
+                        }
+                      }}
+                      className="w-full px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-purple-300 dark:border-purple-700 text-slate-900 dark:text-white font-semibold focus:ring-2 focus:ring-purple-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-semibold text-purple-900 dark:text-purple-200 mb-1">
+                      เลขที่หนังสือ / ใบสั่งซื้อ (ถ้ามี)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="เช่น ศธ 04235/142 หรือ PO-69/01"
+                      value={govOrderNumber}
+                      onChange={e => setGovOrderNumber(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-purple-300 dark:border-purple-700 font-mono text-slate-900 dark:text-white"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* Customer Inputs Grid with Autocomplete */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
               {/* Customer Name Input with Suggestions */}
               <div ref={nameInputWrapperRef} className="relative">
                 <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  ชื่อ-นามสกุล ลูกค้า <span className="text-rose-500">*</span>
+                  {customerType === 'government' ? 'ชื่อผู้ติดต่อ / ชื่อลูกค้า' : 'ชื่อ-นามสกุล ลูกค้า'} <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="text"
@@ -1399,6 +1563,15 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
                       <span className="truncate max-w-[180px]">
                         เครื่องที่ {idx + 1}: {dev.brand} {dev.model || '(ระบุรุ่น)'}
                       </span>
+                      {devices.length > 1 && (
+                        <span className={`text-[10px] px-1.5 py-0.2 rounded font-medium ${
+                          isActive
+                            ? 'bg-purple-500 text-white'
+                            : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                        }`}>
+                          {(STATUS_CONFIG[dev.status || status]?.label || '').split(' ')[0]}
+                        </span>
+                      )}
                     </button>
                     {devices.length > 1 && (
                       <button
@@ -1661,6 +1834,54 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
                     </div>
                   </div>
                 )}
+              </div>
+            </div>
+
+            {/* Per-Device Status (explicitly supports individual status per machine in 1:N tickets) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs pt-1">
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  {devices.length > 1
+                    ? `สถานะเฉพาะเครื่องที่ ${safeActiveIndex + 1}`
+                    : 'สถานะการซ่อมเครื่องนี้'}
+                </label>
+                <select
+                  value={activeDevice.status || status}
+                  onChange={e => {
+                    const nextDevStatus = e.target.value as RepairStatus;
+                    updateActiveDevice({ status: nextDevStatus });
+                    if (devices.length === 1) {
+                      setStatus(nextDevStatus);
+                    }
+                  }}
+                  className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 font-semibold text-xs text-slate-800 dark:text-white"
+                >
+                  <option value="pending">1. รับเครื่องแล้ว / รอดำเนินการ</option>
+                  <option value="diagnosing">2. กำลังตรวจเช็ค / กำลังซ่อม</option>
+                  <option value="waiting_parts">3. รออะไหล่</option>
+                  <option value="repaired">4. ซ่อมเสร็จแล้ว (ทดสอบผ่าน)</option>
+                  <option value="ready_pickup">5. พร้อมส่งมอบ (รอรับเครื่อง)</option>
+                  <option value="completed">6. ส่งมอบแล้ว / ปิดงาน</option>
+                  <option value="cancelled">ยกเลิก / ซ่อมไม่ได้</option>
+                </select>
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  {devices.length > 1
+                    ? `ค่าแรงเครื่องที่ ${safeActiveIndex + 1} (บาท)`
+                    : 'ค่าบริการเบื้องต้นเครื่องนี้ (บาท)'}
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  placeholder="300"
+                  value={laborCostInput}
+                  onChange={e => setLaborCostInput(e.target.value)}
+                  onBlur={() => {
+                    if (!laborCostInput.trim()) setLaborCostInput('0');
+                  }}
+                  className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 font-bold text-xs text-slate-800 dark:text-white"
+                />
               </div>
             </div>
 
@@ -2378,10 +2599,22 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
                     onChange={e => {
                       const val = e.target.value as any;
                       setPaymentMethod(val);
-                      if (val === 'cash' || val === 'transfer' || val === 'credit') {
+                      if (val === 'gov_credit') {
+                        setCustomerType('government');
+                        if (!govBillingSubmittedDate) {
+                          setGovBillingSubmittedDate(receivedDate || getBangkokTodayStr());
+                        }
+                      } else if (val === 'cash' || val === 'transfer' || val === 'credit') {
                         setIsPaid(true);
+                        if (customerType === 'government') {
+                          setGovIsPaid(true);
+                          if (!govPaidDate) setGovPaidDate(getBangkokTodayStr());
+                        }
                       } else if (val === 'unpaid') {
                         setIsPaid(false);
+                        if (customerType === 'government') {
+                          setGovIsPaid(false);
+                        }
                       }
                     }}
                     className="px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-medium text-xs text-slate-800 dark:text-white"
@@ -2390,11 +2623,11 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
                     <option value="cash">เงินสด (ชำระแล้ว)</option>
                     <option value="transfer">โอนเงินธนาคาร / QR PromptPay (ชำระแล้ว)</option>
                     <option value="credit">บัตรเครดิต (ชำระแล้ว)</option>
-                    <option value="gov_credit">🏛️ เครดิตสำหรับราชการ / วางบิล (Government Credit)</option>
+                    <option value="gov_credit">เครดิตสำหรับราชการ / วางบิล (Government Credit)</option>
                   </select>
                 </div>
 
-                {paymentMethod !== 'gov_credit' && (
+                {customerType !== 'government' && paymentMethod !== 'gov_credit' && (
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
                       type="checkbox"
@@ -2410,21 +2643,21 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
               </div>
 
               {/* Government Credit Extra Inputs */}
-              {paymentMethod === 'gov_credit' && (
-                <div className="p-3 rounded-xl bg-purple-50/80 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800/60 space-y-2 text-xs">
-                  <div className="flex items-center justify-between pb-1 border-b border-purple-200 dark:border-purple-800">
+              {(customerType === 'government' || paymentMethod === 'gov_credit') && (
+                <div className="p-3.5 rounded-xl bg-purple-50/80 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800/60 space-y-3 text-xs">
+                  <div className="flex items-center justify-between pb-1.5 border-b border-purple-200 dark:border-purple-800">
                     <span className="font-bold text-purple-900 dark:text-purple-200 flex items-center gap-1.5">
                       <Building2 className="w-4 h-4 text-purple-600" />
-                      <span>ข้อมูลเครดิตสำหรับหน่วยงานราชการ / โรงเรียน</span>
+                      <span>ข้อมูลบิลราชการ วันครบกำหนด และสถานะการรับเงิน</span>
                     </span>
                     <span className="text-[10px] text-purple-700 dark:text-purple-300 font-bold">
                       เครดิต {govCreditDays} วัน
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                     <div ref={govAgencyInputWrapperRef} className="relative">
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">
+                      <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase mb-1">
                         ชื่อหน่วยงานราชการ / สถาบัน
                       </label>
                       <input
@@ -2436,7 +2669,7 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
                           setShowGovAgencySuggestions(true);
                         }}
                         onFocus={() => setShowGovAgencySuggestions(true)}
-                        className="w-full px-2.5 py-1.5 rounded-lg border border-purple-200 dark:border-purple-700 bg-white dark:bg-slate-800"
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-purple-200 dark:border-purple-700 bg-white dark:bg-slate-800 font-semibold"
                       />
 
                       {showGovAgencySuggestions && govAgencySuggestions.length > 0 && (
@@ -2465,7 +2698,7 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
                     </div>
 
                     <div ref={govTaxIdInputWrapperRef} className="relative">
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">
+                      <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase mb-1">
                         เลขผู้เสียภาษี 13 หลัก
                       </label>
                       <input
@@ -2506,8 +2739,8 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
                     </div>
 
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">
-                        เลขที่ใบสั่งซื้อ / PO No.
+                      <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase mb-1">
+                        เลขที่หนังสือ / ใบสั่งซื้อ (ถ้ามี)
                       </label>
                       <input
                         type="text"
@@ -2519,9 +2752,92 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2 pt-1">
+                  {/* Submitted Date, Credit Days, Manual/Auto Due Date */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase mb-1">
+                        วันที่ส่งเอกสารเบิก
+                      </label>
+                      <input
+                        type="date"
+                        value={govBillingSubmittedDate}
+                        onChange={e => {
+                          setGovBillingSubmittedDate(e.target.value);
+                          setGovDueDateManual(false);
+                        }}
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-purple-200 dark:border-purple-700 bg-white dark:bg-slate-800 font-mono"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase mb-1">
+                        เครดิต (วัน)
+                      </label>
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          min="0"
+                          max="365"
+                          value={govCreditDays}
+                          onChange={e => {
+                            setGovCreditDays(Math.max(0, parseInt(e.target.value, 10) || 0));
+                            setGovDueDateManual(false);
+                          }}
+                          className="w-16 px-2 py-1.5 rounded-lg border border-purple-200 dark:border-purple-700 bg-white dark:bg-slate-800 font-bold text-center"
+                        />
+                        <div className="flex flex-1 gap-1">
+                          {[15, 30, 45, 60].map(days => (
+                            <button
+                              key={days}
+                              type="button"
+                              onClick={() => {
+                                setGovCreditDays(days);
+                                setGovDueDateManual(false);
+                              }}
+                              className={`flex-1 py-1.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
+                                govCreditDays === days
+                                  ? 'bg-purple-600 text-white shadow-xs'
+                                  : 'bg-white dark:bg-slate-800 border border-purple-200 text-purple-900 dark:text-purple-300'
+                              }`}
+                            >
+                              {days}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase">
+                          วันครบกำหนดชำระ
+                        </label>
+                        {govDueDateManual && (
+                          <button
+                            type="button"
+                            onClick={() => setGovDueDateManual(false)}
+                            className="text-[10px] text-purple-600 dark:text-purple-300 hover:underline cursor-pointer font-semibold"
+                          >
+                            คำนวณอัตโนมัติ
+                          </button>
+                        )}
+                      </div>
+                      <input
+                        type="date"
+                        value={govDueDate}
+                        onChange={e => {
+                          setGovDueDate(e.target.value);
+                          setGovDueDateManual(true);
+                        }}
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-purple-300 dark:border-purple-600 bg-white dark:bg-slate-800 font-mono font-bold text-purple-900 dark:text-purple-200"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Department + Payment Status + Paid Date */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1 border-t border-purple-200/70 dark:border-purple-800/60">
                     <div ref={govDeptInputWrapperRef} className="relative">
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">
+                      <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase mb-1">
                         ฝ่าย / งานพัสดุ
                       </label>
                       <input
@@ -2533,7 +2849,7 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
                           setShowGovDeptSuggestions(true);
                         }}
                         onFocus={() => setShowGovDeptSuggestions(true)}
-                        className="w-full px-2.5 py-1 rounded-lg border border-purple-200 dark:border-purple-700 bg-white dark:bg-slate-800"
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-purple-200 dark:border-purple-700 bg-white dark:bg-slate-800"
                       />
 
                       {showGovDeptSuggestions && govDeptSuggestions.length > 0 && (
@@ -2560,26 +2876,55 @@ export const TicketFormModal: React.FC<TicketFormModalProps> = ({
                         </div>
                       )}
                     </div>
+
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">
-                        เครดิตเทอม
+                      <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase mb-1">
+                        สถานะการรับเงิน
                       </label>
-                      <div className="flex gap-1">
-                        {[15, 30, 45, 60].map(days => (
-                          <button
-                            key={days}
-                            type="button"
-                            onClick={() => setGovCreditDays(days)}
-                            className={`flex-1 py-1 rounded text-[11px] font-bold transition-all cursor-pointer ${
-                              govCreditDays === days
-                                ? 'bg-purple-600 text-white shadow-xs'
-                                : 'bg-white dark:bg-slate-800 border border-purple-200 text-purple-900 dark:text-purple-300'
-                            }`}
-                          >
-                            {days}ว.
-                          </button>
-                        ))}
+                      <div className="flex gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setGovIsPaid(false);
+                            setIsPaid(false);
+                          }}
+                          className={`flex-1 py-1.5 px-2 rounded-lg font-bold text-[11px] border cursor-pointer transition-all ${
+                            !govIsPaid
+                              ? 'bg-amber-500 text-slate-950 border-amber-600 shadow-xs'
+                              : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                          }`}
+                        >
+                          ยังไม่ได้รับเงิน
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setGovIsPaid(true);
+                            setIsPaid(true);
+                            if (!govPaidDate) setGovPaidDate(getBangkokTodayStr());
+                          }}
+                          className={`flex-1 py-1.5 px-2 rounded-lg font-bold text-[11px] border cursor-pointer transition-all ${
+                            govIsPaid
+                              ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs'
+                              : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                          }`}
+                        >
+                          รับเงินแล้ว
+                        </button>
                       </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase mb-1">
+                        วันที่รับเงิน {govIsPaid ? '' : '(ระบุเมื่อรับเงิน)'}
+                      </label>
+                      <input
+                        type="date"
+                        disabled={!govIsPaid}
+                        value={govIsPaid ? govPaidDate : ''}
+                        onChange={e => setGovPaidDate(e.target.value)}
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-purple-200 dark:border-purple-700 bg-white dark:bg-slate-800 font-mono disabled:opacity-50"
+                      />
                     </div>
                   </div>
                 </div>
